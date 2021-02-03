@@ -154,7 +154,12 @@ impl Telnet {
             }
             [ch, ..] => {
                 self.start += 1;
-                ClientMessage::Char(*ch)
+                match ch {
+                    3 => ClientMessage::CtrlC,
+                    9 => ClientMessage::Tab,
+                    27 => ClientMessage::Esc,
+                    _ => ClientMessage::Char(*ch),
+                }
             }
             [] => ClientMessage::Error,
         };
@@ -172,5 +177,8 @@ pub enum ClientMessage {
     IacOther,
     Naws(u16, u16),
     Char(u8),
+    CtrlC,
+    Tab,
+    Esc,
     Error,
 }

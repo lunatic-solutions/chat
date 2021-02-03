@@ -75,16 +75,9 @@ fn client((state_sender, mut tcp_stream): (Sender<StateMessage>, TcpStream)) {
     state_sender
         .send(StateMessage::Joined(state_lookup))
         .unwrap();
-
     let current_state = state.receive().unwrap();
-    // Render welcome message
-    // tcp_stream
-    //     .write(current_state.render().unwrap().as_bytes())
-    //     .unwrap();
 
-    let mut username = current_state.username;
-
-    // write!(tcp_stream, "\u{001B}[2J").unwrap();
+    let mut username = current_state.username.clone();
 
     let mut telnet = telnet::Telnet::new(tcp_stream.clone());
     telnet.iac_do_linemode().unwrap();
@@ -94,9 +87,16 @@ fn client((state_sender, mut tcp_stream): (Sender<StateMessage>, TcpStream)) {
 
     let window_size = ui::telnet_backend::WindowSize::new();
     let mut ui = ui::Ui::new(tcp_stream, window_size.clone());
+    ui.add_tab(
+        "Welcome".to_string(),
+        ui::TabType::Welcome(current_state.render().unwrap()),
+    );
 
     loop {
         match telnet.next().unwrap() {
+            CtrlC => {
+                return;
+            }
             Char(ch) => {
                 //
             }
