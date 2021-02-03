@@ -1,0 +1,37 @@
+ ___,___,_______,____
+|  :::|///./||'||    \
+|  :::|//.//|| || H)  |  Welcome to our small corner of the internet!
+|  :::|/.///|!!!|     |
+|   _______________   |  Online: {{ clients }}
+|  |:::::::::::::::|  |
+|  |_______________|  |
+|  |_____Hack______|  |  
+|  |_____the_______|  |
+|  |_____Planet!___|  |
+||_|               ||_|
+|__|_______________|__|  Powered by: http://lunatic.solutions
+
+PRIVACY:
+
+No data is stored. Only the last 10 messages fo a channel are retained
+in memory. Once the server shuts off all information will be gone.
+
+MOST POPULAR CHANNELS:
+
+#lunatic: 33 online | #akademsko: 1 online | #nop: 3 online 
+
+INSTRUCTIONS:
+
+You can navigate through this server by using the following commands:
+
+* /nick <username> - Change your username
+* /list            - Lists all #channels available
+* /join <#channel> - Join a channel
+* /drop            - Drop out of channel
+* /help            - Display this instructions
+* /exit            - Leave server
+
+Be respectful and cool!
+---------------------------------------------------------------------
+
+Your username: {{ username }}
