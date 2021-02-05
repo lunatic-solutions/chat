@@ -1,138 +1,34 @@
 #![feature(or_patterns)]
 
+mod channel;
+mod client;
+mod server;
 mod telnet;
 mod ui;
 
-use askama::Template;
-use lunatic::channel::{bounded, unbounded, Receiver, Sender};
-use lunatic::net::{TcpListener, TcpStream};
+use lunatic::channel::unbounded;
+use lunatic::net::TcpListener;
 use lunatic::Process;
-use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, io::Write};
 
-use telnet::ClientMessage::*;
-
-#[derive(Template)]
-#[template(path = "welcome.txt", escape = "none")]
-#[derive(Serialize, Deserialize, Clone)]
-// Used to display welcome information
-struct ServerInfo {
-    username: String,
-    clients: usize,
-}
-
-struct ServerState {
-    clients: usize,
-    channels: HashMap<String, Vec<TcpStream>>,
-}
-
-#[derive(Serialize, Deserialize)]
-enum StateMessage {
-    Joined(Sender<ServerInfo>),
-    Left,
-}
+use clap::{App, Arg};
 
 fn main() {
+    let matches = App::new("lunatic.chat")
+        .version("0.1")
+        .author("Bernard K. <me@kolobara.com>")
+        .about("A telnet chat server")
+        .arg(Arg::new("PORT").about("Sets the listening port for the server"))
+        .get_matches();
+
+    // This channel is used to allow communication between the main server process and all connected clients.
     let (state_sender, state_receiver) = unbounded();
-    let state_server =
-        Process::spawn_with(state_receiver, |state_receiver: Receiver<StateMessage>| {
-            let mut state = ServerState {
-                clients: 0,
-                channels: HashMap::new(),
-            };
 
-            loop {
-                let mut username_generator: i64 = 0;
+    Process::spawn_with(state_receiver, server::server_process).detach();
 
-                match state_receiver.receive().unwrap() {
-                    StateMessage::Joined(client) => {
-                        // Increase the number of active users
-                        state.clients += 1;
-                        // Generate a new username
-                        username_generator += 1;
-                        // Client specific state
-                        let server_info = ServerInfo {
-                            clients: state.clients,
-                            username: format!("User_{}", username_generator),
-                        };
-                        client.send(server_info).unwrap()
-                    }
-                    StateMessage::Left => state.clients -= 1,
-                }
-            }
-        });
-    state_server.detach();
-
-    let listener = TcpListener::bind("0.0.0.0:1337").unwrap();
+    let port = matches.value_of("PORT").unwrap_or("23");
+    let address = format!("0.0.0.0:{}", port);
+    let listener = TcpListener::bind(address).unwrap();
     while let Ok(tcp_stream) = listener.accept() {
-        Process::spawn_with((state_sender.clone(), tcp_stream), client).detach();
+        Process::spawn_with((state_sender.clone(), tcp_stream), client::client_process).detach();
     }
-}
-
-fn client((state_sender, mut tcp_stream): (Sender<StateMessage>, TcpStream)) {
-    let (state_lookup, state) = bounded(1);
-    // Let the state process know that we joined
-    state_sender
-        .send(StateMessage::Joined(state_lookup))
-        .unwrap();
-    let current_state = state.receive().unwrap();
-
-    let mut username = current_state.username.clone();
-
-    let mut telnet = telnet::Telnet::new(tcp_stream.clone());
-    telnet.iac_do_linemode().unwrap();
-    telnet.iac_linemode_zero();
-    telnet.iac_will_echo().unwrap();
-    telnet.iac_do_naws().unwrap();
-
-    let window_size = ui::telnet_backend::WindowSize::new();
-    let mut ui = ui::Ui::new(tcp_stream, window_size.clone());
-    ui.add_tab(
-        "Welcome".to_string(),
-        ui::TabType::Welcome(current_state.render().unwrap()),
-    );
-
-    loop {
-        match telnet.next().unwrap() {
-            CtrlC => {
-                return;
-            }
-            Char(ch) => {
-                //
-            }
-            Naws(width, height) => {
-                window_size.set(width, height);
-                ui.render();
-            }
-            _ => {}
-        }
-        // // Prompt
-        // tcp_stream.write("> ".as_bytes()).unwrap();
-        // tcp_stream.flush().unwrap();
-
-        // let mut buffer = String::new();
-        // match buf_reader.read_line(&mut buffer) {
-        //     Ok(size) => {
-        //         if size == 0 || buffer.starts_with("/exit") {
-        //             break;
-        //         } else if buffer.starts_with("/nick ") {
-        //             let new_username: Vec<&str> = buffer.split(" ").skip(1).collect();
-        //             username = new_username.join(" ");
-        //             tcp_stream
-        //                 .write(format!("username changed to: {}", username).as_bytes())
-        //                 .unwrap();
-        //             tcp_stream.flush().unwrap();
-        //         }
-        //     }
-        //     Err(_) => {
-        //         tcp_stream
-        //             .write("ERROR: **Unsupported character in message or command**".as_bytes())
-        //             .unwrap();
-        //         tcp_stream.flush().unwrap();
-        //     }
-        // }
-    }
-
-    // Let the state process know that we left
-    state_sender.send(StateMessage::Left).unwrap();
 }

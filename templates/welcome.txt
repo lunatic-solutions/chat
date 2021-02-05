@@ -1,9 +1,9 @@
    ___,___,_______,____
   |  :::|///./||'||    \   Welcome to this small corner of the internet!
   |  :::|//.//|| || H)  |  
-  |  :::|/.///|!!!|     |  This chat server was created to power small hacker
-  |   _______________   |  friendly communities. Be cool and respectful to each
-  |  |:::::::::::::::|  |  other.
+  |  :::|/.///|!!!|     |  This chat server was created to power small
+  |   _______________   |  hacker friendly communities. Be cool and
+  |  |:::::::::::::::|  |  respectful to each other.
   |  |_______________|  |
   |  |____ Hack _____|  | 
   |  |____ the ______|  |  Made with <3 by @bkolobara
@@ -13,7 +13,7 @@
   
   INSTRUCTIONS:
 
-  You will be navigating this interface using commands. Commands are prefixed
-  by a / character. Type /help for more information.
+  You will be navigating this interface using commands. Commands are
+  prefixed by a / character. Type /help for more information.
 
-  Your current username is {{ username }}.
+  Your starting name is {{ username }}.

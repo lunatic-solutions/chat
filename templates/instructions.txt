@@ -1,7 +1,8 @@
   PRIVACY:
   
-  No data is stored on the server. Only the last 10 messages for each channel
-  are kept in memory. Once the server shuts off all information will be gone.
+  No data is stored on the server. Only the last 10 messages for each
+  channel are kept in memory. Once the server shuts off all information
+  will be gone.
   
   INSTRUCTIONS:
 

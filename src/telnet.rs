@@ -1,5 +1,6 @@
 use itertools::Itertools;
 use lunatic::net::TcpStream;
+use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 
 const IAC: u8 = 255;
@@ -40,48 +41,49 @@ impl Telnet {
 
         loop {
             match self.next()? {
-                ClientMessage::IacWillLinemode => return Ok(()),
-                ClientMessage::IacWontLinemode => return Err(()),
+                TelnetMessage::IacWillLinemode => return Ok(()),
+                TelnetMessage::IacWontLinemode => return Err(()),
                 _ => {}
             }
         }
     }
 
-    // Tell client not to do local editing
+    // Tell the client not to do local editing
     pub fn iac_linemode_zero(&mut self) {
         let buffer: [u8; 7] = [IAC, SB, LINEMODE, 1, 0, IAC, SE];
         self.stream.write(&buffer).unwrap();
     }
 
-    // Tell client to report window size changes
+    // Tell the client to report window size changes
     pub fn iac_do_naws(&mut self) -> Result<(), ()> {
         let buffer: [u8; 3] = [IAC, DO, NAWS];
         self.stream.write(&buffer).unwrap();
 
         loop {
             match self.next()? {
-                ClientMessage::IacWillNaws => return Ok(()),
-                ClientMessage::IacWontNaws => return Err(()),
+                TelnetMessage::IacWillNaws => return Ok(()),
+                TelnetMessage::IacWontNaws => return Err(()),
                 _ => {}
             }
         }
     }
 
+    // Tell the client that we will be doing the echoing
     pub fn iac_will_echo(&mut self) -> Result<(), ()> {
         let buffer: [u8; 3] = [IAC, WILL, ECHO];
         self.stream.write(&buffer).unwrap();
 
         loop {
             match self.next()? {
-                ClientMessage::IacDoEcho => return Ok(()),
-                ClientMessage::IacDontEcho => return Err(()),
+                TelnetMessage::IacDoEcho => return Ok(()),
+                TelnetMessage::IacDontEcho => return Err(()),
                 _ => {}
             }
         }
     }
 
     /// Get next message from client
-    pub fn next(&mut self) -> Result<ClientMessage, ()> {
+    pub fn next(&mut self) -> Result<TelnetMessage, ()> {
         // If we reached the end of the buffer read more from tcp stream
         if self.start == self.end {
             match self.stream.read(&mut self.buffer).unwrap() {
@@ -96,32 +98,32 @@ impl Telnet {
         let result = match self.buffer.get(self.start..self.end).unwrap() {
             [IAC, WILL, LINEMODE, ..] => {
                 self.start += 3;
-                ClientMessage::IacWillLinemode
+                TelnetMessage::IacWillLinemode
             }
             [IAC, WONT, LINEMODE, ..] => {
                 self.start += 3;
-                ClientMessage::IacWontLinemode
+                TelnetMessage::IacWontLinemode
             }
             [IAC, WILL, NAWS, ..] => {
                 self.start += 3;
-                ClientMessage::IacWillNaws
+                TelnetMessage::IacWillNaws
             }
             [IAC, WONT, NAWS, ..] => {
                 self.start += 3;
-                ClientMessage::IacWontNaws
+                TelnetMessage::IacWontNaws
             }
             [IAC, DO, ECHO, ..] => {
                 self.start += 3;
-                ClientMessage::IacDoEcho
+                TelnetMessage::IacDoEcho
             }
             [IAC, DONT, ECHO, ..] => {
                 self.start += 3;
-                ClientMessage::IacDontEcho
+                TelnetMessage::IacDontEcho
             }
             // Ignore other 3 byte patterns
             [IAC, DO | DONT | WILL | WONT, _, ..] => {
                 self.start += 3;
-                ClientMessage::IacOther
+                TelnetMessage::IacOther
             }
             // Handle NAWS
             multibyte @ [IAC, SB, NAWS, .., IAC, SE] => {
@@ -145,29 +147,47 @@ impl Telnet {
                     )
                 };
                 self.start += len;
-                ClientMessage::Naws(width, height)
+                TelnetMessage::Naws(width, height)
             }
             // Ignore multibyte SB patterns
             multibyte @ [IAC, SB, .., IAC, SE] => {
                 self.start += multibyte.len();
-                ClientMessage::IacOther
+                TelnetMessage::IacOther
+            }
+            // Escape characters
+            [0x1b, 0x5b, esc, ..] => {
+                self.start += 3;
+                match esc {
+                    65 => TelnetMessage::Up,
+                    66 => TelnetMessage::Down,
+                    67 => TelnetMessage::Right,
+                    68 => TelnetMessage::Left,
+                    _ => TelnetMessage::Ignore,
+                }
+            }
+            // Enter (NL CR)
+            [13, 0, ..] => {
+                self.start += 2;
+                TelnetMessage::Enter
             }
             [ch, ..] => {
                 self.start += 1;
                 match ch {
-                    3 => ClientMessage::CtrlC,
-                    9 => ClientMessage::Tab,
-                    27 => ClientMessage::Esc,
-                    _ => ClientMessage::Char(*ch),
+                    3 => TelnetMessage::CtrlC,
+                    127 => TelnetMessage::Backspace,
+                    9 => TelnetMessage::Tab,
+                    27 => TelnetMessage::Esc,
+                    _ => TelnetMessage::Char(*ch),
                 }
             }
-            [] => ClientMessage::Error,
+            [] => TelnetMessage::Error,
         };
         Ok(result)
     }
 }
 
-pub enum ClientMessage {
+#[derive(Serialize, Deserialize)]
+pub enum TelnetMessage {
     IacWillLinemode,
     IacWontLinemode,
     IacDoEcho,
@@ -177,8 +197,15 @@ pub enum ClientMessage {
     IacOther,
     Naws(u16, u16),
     Char(u8),
+    Backspace,
+    Enter,
     CtrlC,
     Tab,
     Esc,
+    Up,
+    Down,
+    Right,
+    Left,
+    Ignore,
     Error,
 }
