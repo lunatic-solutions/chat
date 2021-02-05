@@ -39,6 +39,8 @@ pub enum ServerMessage {
     // Clients requests a name change
     // (from, to, confirmation lunatic channel)
     ChangeName(String, String, Sender<bool>),
+    // List most popular channels
+    List(Sender<Vec<(String, usize)>>),
 }
 
 /// The server is the main coordinator between all the clients.
@@ -69,6 +71,16 @@ pub fn server_process(state_receiver: Receiver<ServerMessage>) {
                 };
                 let _ = client.send(server_info);
             }
+            ServerMessage::List(client) => {
+                let mut response: Vec<(String, usize)> = state
+                    .channels
+                    .iter()
+                    .map(|(channel, stats)| (channel.clone(), stats.clients))
+                    .collect();
+                response.sort_by(|a, b| a.1.cmp(&b.1));
+                response.truncate(10);
+                let _ = client.send(response);
+            }
             ServerMessage::ChangeName(from, to, client) => {
                 if all_usernames.contains(&to) {
                     // Notify client that the name is taken
@@ -76,7 +88,7 @@ pub fn server_process(state_receiver: Receiver<ServerMessage>) {
                 } else {
                     all_usernames.remove(&from);
                     all_usernames.insert(to);
-                    let _ = client.send(false);
+                    let _ = client.send(true);
                 }
             }
             ServerMessage::Left(channels) => {

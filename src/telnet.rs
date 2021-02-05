@@ -22,6 +22,9 @@ pub struct Telnet {
     start: usize,
     end: usize,
     buffer: [u8; 1024],
+    naws: bool,
+    linemode: bool,
+    echo: bool,
 }
 
 impl Telnet {
@@ -31,6 +34,9 @@ impl Telnet {
             buffer: [0; 1024],
             start: 0,
             end: 0,
+            naws: false,
+            linemode: false,
+            echo: false,
         }
     }
 
@@ -39,13 +45,13 @@ impl Telnet {
         self.stream.write(&buffer).unwrap();
         self.stream.flush().unwrap();
 
-        loop {
+        while !self.linemode {
             match self.next()? {
-                TelnetMessage::IacWillLinemode => return Ok(()),
                 TelnetMessage::IacWontLinemode => return Err(()),
                 _ => {}
             }
         }
+        Ok(())
     }
 
     // Tell the client not to do local editing
@@ -59,13 +65,13 @@ impl Telnet {
         let buffer: [u8; 3] = [IAC, DO, NAWS];
         self.stream.write(&buffer).unwrap();
 
-        loop {
+        while !self.naws {
             match self.next()? {
-                TelnetMessage::IacWillNaws => return Ok(()),
                 TelnetMessage::IacWontNaws => return Err(()),
                 _ => {}
             }
         }
+        Ok(())
     }
 
     // Tell the client that we will be doing the echoing
@@ -73,13 +79,13 @@ impl Telnet {
         let buffer: [u8; 3] = [IAC, WILL, ECHO];
         self.stream.write(&buffer).unwrap();
 
-        loop {
+        while !self.echo {
             match self.next()? {
-                TelnetMessage::IacDoEcho => return Ok(()),
                 TelnetMessage::IacDontEcho => return Err(()),
                 _ => {}
             }
         }
+        Ok(())
     }
 
     /// Get next message from client
@@ -98,6 +104,7 @@ impl Telnet {
         let result = match self.buffer.get(self.start..self.end).unwrap() {
             [IAC, WILL, LINEMODE, ..] => {
                 self.start += 3;
+                self.linemode = true;
                 TelnetMessage::IacWillLinemode
             }
             [IAC, WONT, LINEMODE, ..] => {
@@ -106,6 +113,7 @@ impl Telnet {
             }
             [IAC, WILL, NAWS, ..] => {
                 self.start += 3;
+                self.naws = true;
                 TelnetMessage::IacWillNaws
             }
             [IAC, WONT, NAWS, ..] => {
@@ -114,6 +122,7 @@ impl Telnet {
             }
             [IAC, DO, ECHO, ..] => {
                 self.start += 3;
+                self.echo = true;
                 TelnetMessage::IacDoEcho
             }
             [IAC, DONT, ECHO, ..] => {

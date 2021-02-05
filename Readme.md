@@ -5,3 +5,7 @@ Join the hosted version with:
 ```bash
 telnet lunatic.chat
 ```
+
+### Licence
+
+MIT

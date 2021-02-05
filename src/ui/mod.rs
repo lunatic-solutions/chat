@@ -103,13 +103,26 @@ impl Ui {
 
     fn render_channel(frame: &mut Frame<TelnetBackend>, content: Vec<String>, area: Rect) {
         let mut lines = Vec::with_capacity(content.len());
+        // +2 to calculate boarders
+        let mut vertical_space_used = 2;
         for line in content {
-            lines.push(Spans::from(line));
+            // -2 for boarders, -1 to only add if overflown
+            vertical_space_used += (line.len() as i16 / (area.width - 3) as i16) + 1;
+            for word in line.split_whitespace() {
+                // For each word longer than the screen width add a new line
+                vertical_space_used += word.len() as i16 / (area.width - 3) as i16;
+            }
+            lines.push(Spans::from(Span::from(line)));
         }
-        let welcome = Paragraph::new(lines)
+        // Calculate scroll
+        let scroll = vertical_space_used - area.height as i16;
+        let scroll = if scroll < 0 { 0 } else { scroll };
+
+        let chat = Paragraph::new(lines)
             .block(Block::default().borders(Borders::ALL))
-            .wrap(Wrap { trim: false });
-        frame.render_widget(welcome, area);
+            .scroll((scroll as u16, 0))
+            .wrap(Wrap { trim: true });
+        frame.render_widget(chat, area);
     }
 
     fn render_input(frame: &mut Frame<TelnetBackend>, content: String, area: Rect) {
@@ -124,7 +137,7 @@ impl Ui {
         let input = Spans::from(vec![arrow, content, cursor]);
         let welcome = Paragraph::new(input)
             .block(Block::default().borders(Borders::ALL))
-            .wrap(Wrap { trim: false });
+            .wrap(Wrap { trim: true });
         frame.render_widget(welcome, area);
     }
 }

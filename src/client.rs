@@ -24,6 +24,12 @@ struct Welcome {
 }
 
 #[derive(Template)]
+#[template(path = "list.txt", escape = "none")]
+struct ChannelList {
+    list: Vec<(String, usize)>,
+}
+
+#[derive(Template)]
 #[template(path = "instructions.txt", escape = "none")]
 struct Instructions {}
 
@@ -115,6 +121,36 @@ pub fn client_process((central_server, tcp_stream): (Sender<ServerMessage>, TcpS
                                 tabs.add(tab);
                                 ui.render();
                             }
+                            "/nick" => {
+                                if let Some(nick) = split.next() {
+                                    let (sender, receiver) = bounded(1);
+                                    central_server
+                                        .send(ServerMessage::ChangeName(
+                                            username.clone(),
+                                            nick.to_string(),
+                                            sender,
+                                        ))
+                                        .unwrap();
+                                    if receiver.receive().unwrap() {
+                                        username = nick.to_string();
+                                    } else {
+                                    }
+                                };
+                                ui.render();
+                            }
+                            "/list" => {
+                                let (sender, receiver) = bounded(1);
+                                central_server.send(ServerMessage::List(sender)).unwrap();
+                                let list = receiver.receive().unwrap();
+                                let list = ChannelList { list };
+                                let tab = Tab::new(
+                                    "Channels".to_string(),
+                                    None,
+                                    TabType::Info(list.render().unwrap()),
+                                );
+                                tabs.add(tab);
+                                ui.render();
+                            }
                             "/drop" => {
                                 let current_channel = tabs.get_selected().get_name();
                                 central_server
@@ -165,8 +201,10 @@ pub fn client_process((central_server, tcp_stream): (Sender<ServerMessage>, TcpS
                         }
                     } else {
                         // Send to channel
-                        tabs.get_selected()
-                            .message(username.clone(), input.to_string());
+                        if input.len() > 0 {
+                            tabs.get_selected()
+                                .message(username.clone(), input.to_string());
+                        }
                     }
                     ui.render();
                 }
