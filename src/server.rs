@@ -30,7 +30,7 @@ pub enum ServerMessage {
     // Client wants to receive server information.
     Joined(Sender<ServerInfo>),
     // Clients notify the server that they left and send all the the channels to drop.
-    Left(Vec<String>),
+    Left(String, Vec<String>),
     // Clients notify the server that they want to join a channel.
     // (channel name, a lunatic channel to send back a lunatic channel to send messages to the channel :S)
     Channel(String, Sender<Sender<ChannelMessage>>),
@@ -77,7 +77,7 @@ pub fn server_process(state_receiver: Receiver<ServerMessage>) {
                     .iter()
                     .map(|(channel, stats)| (channel.clone(), stats.clients))
                     .collect();
-                response.sort_by(|a, b| a.1.cmp(&b.1));
+                response.sort_by(|a, b| a.1.cmp(&b.1).reverse());
                 response.truncate(10);
                 let _ = client.send(response);
             }
@@ -91,12 +91,20 @@ pub fn server_process(state_receiver: Receiver<ServerMessage>) {
                     let _ = client.send(true);
                 }
             }
-            ServerMessage::Left(channels) => {
+            ServerMessage::Left(username, channels) => {
+                all_usernames.remove(&username);
                 state.clients -= 1;
                 channels.iter().for_each(|name| {
-                    if let Some(exists) = state.channels.get_mut(name) {
+                    let drop = if let Some(exists) = state.channels.get_mut(name) {
                         exists.clients -= 1;
-                    }
+                        exists.clients == 0
+                    } else {
+                        false
+                    };
+                    // Remove channel if last client left
+                    if drop {
+                        state.channels.remove(name);
+                    };
                 })
             }
             ServerMessage::DropChannel(name) => {

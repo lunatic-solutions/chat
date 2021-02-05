@@ -228,6 +228,6 @@ pub fn client_process((central_server, tcp_stream): (Sender<ServerMessage>, TcpS
 
     // Let the state process know that we left
     central_server
-        .send(ServerMessage::Left(tabs.names()))
+        .send(ServerMessage::Left(username.clone(), tabs.names()))
         .unwrap();
 }

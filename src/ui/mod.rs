@@ -3,6 +3,7 @@ pub mod termion;
 
 use std::{cell::RefCell, mem, rc::Rc};
 
+use chrono::{DateTime, Local};
 use tui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::Modifier,
@@ -101,21 +102,30 @@ impl Ui {
         frame.render_widget(welcome, area);
     }
 
-    fn render_channel(frame: &mut Frame<TelnetBackend>, content: Vec<String>, area: Rect) {
+    fn render_channel(
+        frame: &mut Frame<TelnetBackend>,
+        content: Vec<(String, String)>,
+        area: Rect,
+    ) {
         let mut lines = Vec::with_capacity(content.len());
         // +2 to calculate boarders
         let mut vertical_space_used = 2;
         for line in content {
+            let now: DateTime<Local> = Local::now();
+            let timestamp = format!("[{}] ", now.format("%H:%M UTC"));
+            let spans = Spans::from(vec![
+                Span::styled(timestamp, Style::default().fg(Color::Yellow)),
+                Span::styled(line.0, Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(": ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(line.1),
+            ]);
+            let width = spans.width();
+            lines.push(spans);
             // -2 for boarders, -1 to only add if overflown
-            vertical_space_used += (line.len() as i16 / (area.width - 3) as i16) + 1;
-            for word in line.split_whitespace() {
-                // For each word longer than the screen width add a new line
-                vertical_space_used += word.len() as i16 / (area.width - 3) as i16;
-            }
-            lines.push(Spans::from(Span::from(line)));
+            vertical_space_used += (width as i16 / (area.width - 3) as i16) + 1;
         }
         // Calculate scroll
-        let scroll = vertical_space_used - area.height as i16;
+        let scroll = vertical_space_used - area.height as i16 + 1; // 1 line as buffer
         let scroll = if scroll < 0 { 0 } else { scroll };
 
         let chat = Paragraph::new(lines)
@@ -209,7 +219,10 @@ impl UiTabs {
             .unwrap();
         match &mut tab.tab_type {
             TabType::Channel(content) => {
-                content.push(format!("{}: {}", user, message));
+                content.push((user, message));
+                if content.len() > 100 {
+                    content.drain(0..50);
+                }
             }
             _ => unimplemented!(),
         }
@@ -317,5 +330,5 @@ impl Tab {
 #[derive(Clone)]
 pub enum TabType {
     Info(String),
-    Channel(Vec<String>),
+    Channel(Vec<(String, String)>),
 }
