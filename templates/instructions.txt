@@ -15,9 +15,7 @@
   
   * /nick <username> - Change your username
   * /list            - Lists most popular #channels
-  * /join <#channel> - Join a channel
-  * /drop            - Drop out of channel
+  * /join <#channel> - Join a channel, if it doesn't exist create it.
+  * /drop            - Drop out of a channel
   * /help            - Display this instructions
   * /exit            - Leave server
-  
-  
