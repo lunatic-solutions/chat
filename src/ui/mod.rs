@@ -3,7 +3,6 @@ pub mod termion;
 
 use std::{cell::RefCell, mem, rc::Rc};
 
-use chrono::{DateTime, Local};
 use tui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::Modifier,
@@ -104,20 +103,18 @@ impl Ui {
 
     fn render_channel(
         frame: &mut Frame<TelnetBackend>,
-        content: Vec<(String, String)>,
+        content: Vec<(String, String, String)>,
         area: Rect,
     ) {
         let mut lines = Vec::with_capacity(content.len());
         // +2 to calculate boarders
         let mut vertical_space_used = 2;
         for line in content {
-            let now: DateTime<Local> = Local::now();
-            let timestamp = format!("[{}] ", now.format("%H:%M UTC"));
             let spans = Spans::from(vec![
-                Span::styled(timestamp, Style::default().fg(Color::Yellow)),
-                Span::styled(line.0, Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(line.0, Style::default().fg(Color::Yellow)),
+                Span::styled(line.1, Style::default().add_modifier(Modifier::BOLD)),
                 Span::styled(": ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(line.1),
+                Span::raw(line.2),
             ]);
             let width = spans.width();
             lines.push(spans);
@@ -210,7 +207,7 @@ impl UiTabs {
         }
     }
 
-    pub fn add_message(&self, channel: String, user: String, message: String) {
+    pub fn add_message(&self, channel: String, timestamp: String, user: String, message: String) {
         let mut mutable = self.inner.as_ref().borrow_mut();
         let tab = mutable
             .tabs
@@ -219,7 +216,7 @@ impl UiTabs {
             .unwrap();
         match &mut tab.tab_type {
             TabType::Channel(content) => {
-                content.push((user, message));
+                content.push((timestamp, user, message));
                 if content.len() > 100 {
                     content.drain(0..50);
                 }
@@ -330,5 +327,5 @@ impl Tab {
 #[derive(Clone)]
 pub enum TabType {
     Info(String),
-    Channel(Vec<(String, String)>),
+    Channel(Vec<(String, String, String)>),
 }

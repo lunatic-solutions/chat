@@ -8,6 +8,7 @@ use crate::{
     ui::telnet_backend,
 };
 use askama::Template;
+use chrono::{DateTime, Local};
 use lunatic::{
     channel::{bounded, unbounded, Sender},
     net::TcpStream,
@@ -218,7 +219,9 @@ pub fn client_process((central_server, tcp_stream): (Sender<ServerMessage>, TcpS
             // Handle messages coming from channels
             ClientMessage::ChannelMessage(message) => match message {
                 ChannelMessage::Message(channel, name, message) => {
-                    tabs.add_message(channel, name, message);
+                    let now: DateTime<Local> = Local::now();
+                    let timestamp = format!("[{}] ", now.format("%H:%M UTC"));
+                    tabs.add_message(channel, timestamp, name, message);
                     ui.render();
                 }
                 _ => {}
