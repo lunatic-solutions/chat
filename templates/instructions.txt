@@ -4,8 +4,9 @@
   
   PRIVACY:
   
-  No data is stored on the server. Once the server shuts off all information
-  will be gone.
+  No data is stored on the server. Only the last 10 messages per channel
+  are kept in memory to bring new users up to date. Once the server shuts
+  off all information will be gone.
   
   INSTRUCTIONS:
 

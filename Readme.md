@@ -18,6 +18,16 @@ telnet lunatic.chat
 telnet eu.lunatic.chat
 ```
 
+You should pick the one closer to you as all the rendering is done on the backend and lower latency
+will mean better UX.
+
+### Architecture
+
+The server is written in Rust. The Rust code is then compiled to WebAssembly and runs on top of
+Lunatic. Each connection runs in a separate (lightweight) process, has it's own state and sends
+just a diff of esc-sequences back to the terminal to bring it up to date with the current render
+buffer.
+
 ### Build & run instructions
 
 TODO

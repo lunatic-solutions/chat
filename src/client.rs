@@ -87,7 +87,12 @@ pub fn client_process((central_server, tcp_stream): (Sender<ServerMessage>, TcpS
 
     let mut ui = Ui::new(tcp_stream, window_size.clone(), tabs.clone());
     loop {
-        match interrupt_listener.receive().unwrap() {
+        let interrupt = if let Ok(interrupt) = interrupt_listener.receive() {
+            interrupt
+        } else {
+            break;
+        };
+        match interrupt {
             // Handle commands coming from tcp
             ClientMessage::Telnet(command) => match command {
                 CtrlC => {
@@ -161,7 +166,11 @@ pub fn client_process((central_server, tcp_stream): (Sender<ServerMessage>, TcpS
                                 ui.render();
                             }
                             "/join" => {
-                                let channel = split.next().unwrap();
+                                let channel = if let Some(channel) = split.next() {
+                                    channel
+                                } else {
+                                    continue;
+                                };
                                 if channel.starts_with("#") {
                                     // Request channel from server
                                     let (channel_lookup, channel_rcv) = bounded(1);
@@ -182,12 +191,12 @@ pub fn client_process((central_server, tcp_stream): (Sender<ServerMessage>, TcpS
                                         ))
                                         .unwrap();
                                     // Wait on channel to assign an id to client
-                                    let id = id_receiver.receive().unwrap();
+                                    let (id, last_messages) = id_receiver.receive().unwrap();
                                     // Create new tab bound to channel
                                     let tab = Tab::new(
                                         channel.to_string(),
                                         Some((id, channel_notify)),
-                                        TabType::Channel(Vec::new()),
+                                        TabType::Channel(last_messages),
                                     );
                                     tabs.add(tab);
                                     ui.render();
@@ -202,9 +211,14 @@ pub fn client_process((central_server, tcp_stream): (Sender<ServerMessage>, TcpS
                         }
                     } else {
                         // Send to channel
-                        if input.len() > 0 {
-                            tabs.get_selected()
-                                .message(username.clone(), input.to_string());
+                        if input.len() > 0 && input.len() < 300 {
+                            let now: DateTime<Local> = Local::now();
+                            let timestamp = format!("[{}] ", now.format("%H:%M UTC"));
+                            tabs.get_selected().message(
+                                timestamp.clone(),
+                                username.clone(),
+                                input.to_string(),
+                            );
                         }
                     }
                     ui.render();
@@ -218,9 +232,7 @@ pub fn client_process((central_server, tcp_stream): (Sender<ServerMessage>, TcpS
 
             // Handle messages coming from channels
             ClientMessage::ChannelMessage(message) => match message {
-                ChannelMessage::Message(channel, name, message) => {
-                    let now: DateTime<Local> = Local::now();
-                    let timestamp = format!("[{}] ", now.format("%H:%M UTC"));
+                ChannelMessage::Message(channel, timestamp, name, message) => {
                     tabs.add_message(channel, timestamp, name, message);
                     ui.render();
                 }

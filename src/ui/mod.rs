@@ -309,10 +309,15 @@ impl Tab {
         self.input.push(ch);
     }
 
-    pub fn message(&self, user: String, message: String) {
+    pub fn message(&self, timestamp: String, user: String, message: String) {
         if let Some((_id, notifier)) = &self.notifier {
             notifier
-                .send(ChannelMessage::Message("".to_string(), user, message))
+                .send(ChannelMessage::Message(
+                    "".to_string(),
+                    timestamp,
+                    user,
+                    message,
+                ))
                 .unwrap();
         }
     }
