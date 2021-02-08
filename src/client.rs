@@ -56,17 +56,33 @@ pub fn client_process((central_server, tcp_stream): (Sender<ServerMessage>, TcpS
         (tcp_stream.clone(), interrupt_sender.clone()),
         |(tcp_stream, interrupt_sender)| {
             let mut telnet = Telnet::new(tcp_stream);
-            telnet.iac_do_linemode().unwrap();
-            telnet.iac_linemode_zero();
-            telnet.iac_will_echo().unwrap();
-            telnet.iac_do_naws().unwrap();
+            match (|| {
+                telnet.iac_do_linemode()?;
+                telnet.iac_linemode_zero();
+                telnet.iac_will_echo()?;
+                telnet.iac_do_naws()?;
+                Ok(())
+            })() {
+                Ok(()) => {}
+                Err(()) => {
+                    interrupt_sender
+                        .send(ClientMessage::Telnet(TelnetMessage::Error))
+                        .unwrap();
+                    return;
+                }
+            }
 
             loop {
                 match telnet.next() {
                     Ok(command) => interrupt_sender
                         .send(ClientMessage::Telnet(command))
                         .unwrap(),
-                    Err(_) => break,
+                    Err(_) => {
+                        interrupt_sender
+                            .send(ClientMessage::Telnet(TelnetMessage::Error))
+                            .unwrap();
+                        return;
+                    }
                 };
             }
         },
@@ -95,7 +111,7 @@ pub fn client_process((central_server, tcp_stream): (Sender<ServerMessage>, TcpS
         match interrupt {
             // Handle commands coming from tcp
             ClientMessage::Telnet(command) => match command {
-                CtrlC => {
+                CtrlC | Error => {
                     break;
                 }
                 Tab => {
