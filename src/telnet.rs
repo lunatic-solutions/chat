@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Result};
 use itertools::Itertools;
 use lunatic::net::TcpStream;
 use serde::{Deserialize, Serialize};
@@ -40,14 +41,14 @@ impl Telnet {
         }
     }
 
-    pub fn iac_do_linemode(&mut self) -> Result<(), ()> {
+    pub fn iac_do_linemode(&mut self) -> Result<()> {
         let buffer: [u8; 3] = [IAC, DO, LINEMODE];
-        self.stream.write(&buffer).unwrap();
-        self.stream.flush().unwrap();
+        self.stream.write(&buffer)?;
+        self.stream.flush()?;
 
         while !self.linemode {
             match self.next()? {
-                TelnetMessage::IacWontLinemode => return Err(()),
+                TelnetMessage::IacWontLinemode => return Err(anyhow!("Linemode not supported")),
                 _ => {}
             }
         }
@@ -61,13 +62,13 @@ impl Telnet {
     }
 
     // Tell the client to report window size changes
-    pub fn iac_do_naws(&mut self) -> Result<(), ()> {
+    pub fn iac_do_naws(&mut self) -> Result<()> {
         let buffer: [u8; 3] = [IAC, DO, NAWS];
-        self.stream.write(&buffer).unwrap();
+        self.stream.write(&buffer)?;
 
         while !self.naws {
             match self.next()? {
-                TelnetMessage::IacWontNaws => return Err(()),
+                TelnetMessage::IacWontNaws => return Err(anyhow!("NAWS not supported")),
                 _ => {}
             }
         }
@@ -75,13 +76,13 @@ impl Telnet {
     }
 
     // Tell the client that we will be doing the echoing
-    pub fn iac_will_echo(&mut self) -> Result<(), ()> {
+    pub fn iac_will_echo(&mut self) -> Result<()> {
         let buffer: [u8; 3] = [IAC, WILL, ECHO];
-        self.stream.write(&buffer).unwrap();
+        self.stream.write(&buffer)?;
 
         while !self.echo {
             match self.next()? {
-                TelnetMessage::IacDontEcho => return Err(()),
+                TelnetMessage::IacDontEcho => return Err(anyhow!("Echo not supported")),
                 _ => {}
             }
         }
@@ -89,11 +90,11 @@ impl Telnet {
     }
 
     /// Get next message from client
-    pub fn next(&mut self) -> Result<TelnetMessage, ()> {
+    pub fn next(&mut self) -> Result<TelnetMessage> {
         // If we reached the end of the buffer read more from tcp stream
         if self.start == self.end {
-            match self.stream.read(&mut self.buffer).unwrap() {
-                0 => return Err(()),
+            match self.stream.read(&mut self.buffer)? {
+                0 => return Err(anyhow!("Stream closed")),
                 size => {
                     self.start = 0;
                     self.end = size;

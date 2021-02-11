@@ -64,7 +64,8 @@ pub fn client_process((central_server, tcp_stream): (Sender<ServerMessage>, TcpS
                 Ok(())
             })() {
                 Ok(()) => {}
-                Err(()) => {
+                Err(error) => {
+                    let _error: anyhow::Error = error;
                     interrupt_sender
                         .send(ClientMessage::Telnet(TelnetMessage::Error))
                         .unwrap();

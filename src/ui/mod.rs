@@ -41,46 +41,44 @@ impl Ui {
     pub fn render(&mut self) {
         let tabs = self.tabs.widget();
         let selected_tab = self.tabs.get_selected();
-        self.terminal
-            .draw(|f| {
-                let size = f.size();
-                if size.width < 80 || size.height < 24 {
-                    return Self::render_size_warning(f);
+        let _ = self.terminal.draw(|f| {
+            let size = f.size();
+            if size.width < 80 || size.height < 24 {
+                return Self::render_size_warning(f);
+            }
+
+            let layout = Layout::default()
+                .direction(Direction::Vertical)
+                .margin(1)
+                .constraints(
+                    [
+                        Constraint::Percentage(5),
+                        Constraint::Percentage(85),
+                        Constraint::Percentage(10),
+                    ]
+                    .as_ref(),
+                )
+                .split(size);
+
+            // Render tabs
+            f.render_widget(tabs, layout[0]);
+
+            // Render selected tab content
+            match selected_tab.get_type() {
+                TabType::Info(content) => {
+                    // Render selected tab content
+                    Self::render_info(f, content, layout[1]);
+                    // Render input box
+                    Self::render_input(f, selected_tab.get_input(), layout[2])
                 }
-
-                let layout = Layout::default()
-                    .direction(Direction::Vertical)
-                    .margin(1)
-                    .constraints(
-                        [
-                            Constraint::Percentage(5),
-                            Constraint::Percentage(85),
-                            Constraint::Percentage(10),
-                        ]
-                        .as_ref(),
-                    )
-                    .split(size);
-
-                // Render tabs
-                f.render_widget(tabs, layout[0]);
-
-                // Render selected tab content
-                match selected_tab.get_type() {
-                    TabType::Info(content) => {
-                        // Render selected tab content
-                        Self::render_info(f, content, layout[1]);
-                        // Render input box
-                        Self::render_input(f, selected_tab.get_input(), layout[2])
-                    }
-                    TabType::Channel(content) => {
-                        // Render channel
-                        Self::render_channel(f, content, layout[1]);
-                        // Render input box
-                        Self::render_input(f, selected_tab.get_input(), layout[2])
-                    }
+                TabType::Channel(content) => {
+                    // Render channel
+                    Self::render_channel(f, content, layout[1]);
+                    // Render input box
+                    Self::render_input(f, selected_tab.get_input(), layout[2])
                 }
-            })
-            .unwrap();
+            }
+        });
     }
 
     fn render_size_warning(frame: &mut Frame<TelnetBackend>) {

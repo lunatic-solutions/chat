@@ -378,6 +378,7 @@ dependencies = [
 name = "telnet-chat"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "askama",
  "chrono",
  "clap",
