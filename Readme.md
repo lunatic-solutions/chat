@@ -2,6 +2,9 @@
 
 A telnet chat server written in Rust, running on [Lunatic](https://github.com/lunatic-solutions/lunatic).
 
+I wrote a blog post about the implementation,
+[you can read it here](https://lunatic.solutions/blog/lunatic-chat/).
+
 <div align="center">
     <a href="#">
         <img src="https://raw.githubusercontent.com/lunatic-solutions/chat/main/assets/ss.png" alt="Lunatic logo">
