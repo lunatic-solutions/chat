@@ -25,7 +25,8 @@ fn main() {
 
     Process::spawn_with(state_receiver, server::server_process).detach();
 
-    let port = matches.value_of("PORT").unwrap_or("23");
+    let port = matches.value_of("PORT").unwrap_or("8080");
+    println!("Started server on port {}", port);
     let address = format!("0.0.0.0:{}", port);
     let listener = TcpListener::bind(address).unwrap();
     while let Ok(tcp_stream) = listener.accept() {
