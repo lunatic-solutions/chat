@@ -15,9 +15,6 @@ I wrote a blog post about the implementation,
 If you just would like to try it out, join the hosted version with:
 
 ```bash
-# US server
-telnet lunatic.chat
-# EU server
 telnet eu.lunatic.chat
 ```
 
