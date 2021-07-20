@@ -36,16 +36,14 @@ buffer.
 If you have [rustup](https://rustup.rs/) installed:
 
 ```bash
-# Add Rust nightly:
-> rustup toolchain add nightly
 # Add the wasm32-wasi target
 > rustup target add wasm32-wasi
 # Build the project
-> cargo +nightly build
+> cargo build
 ```
 
 To run it, you will need to have [lunatic](https://github.com/lunatic-solutions/lunatic) on your PATH.
-If this is the case you can just run `cargo +nightly run` or find the generated `telnet-chat.wasm` file
+If this is the case you can just run `cargo run` or find the generated `telnet-chat.wasm` file
 in the target folder and run it with `lunatic path/to/telnet-chat.wasm`.
 
 ### Licence

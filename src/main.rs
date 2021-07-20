@@ -1,5 +1,3 @@
-#![feature(or_patterns)]
-
 mod channel;
 mod client;
 mod server;
