@@ -1,8 +1,9 @@
 use crate::{
     channel::ChannelMessage,
+    coordinator::CoordinatorResponse,
     ui::{Tab, TabType, Ui, UiTabs},
 };
-use crate::{server::ServerMessage, telnet::Telnet};
+use crate::{coordinator::CoordinatorRequest, telnet::Telnet};
 use crate::{
     telnet::TelnetMessage::{self, *},
     ui::telnet_backend,
@@ -10,12 +11,14 @@ use crate::{
 use askama::Template;
 use chrono::{DateTime, Local};
 use lunatic::{
-    channel::{bounded, unbounded, Sender},
+    lookup,
     net::TcpStream,
-    Process,
+    process::{self, Process},
+    Mailbox,
 };
 use serde::{Deserialize, Serialize};
 
+// The template for the welcome screen.
 #[derive(Template)]
 #[template(path = "welcome.txt", escape = "none")]
 #[derive(Serialize, Deserialize, Clone)]
@@ -24,12 +27,14 @@ struct Welcome {
     clients: usize,
 }
 
+// The template for the list of all channels screen.
 #[derive(Template)]
 #[template(path = "list.txt", escape = "none")]
 struct ChannelList {
     list: Vec<(String, usize)>,
 }
 
+// The template for the instructions screen
 #[derive(Template)]
 #[template(path = "instructions.txt", escape = "none")]
 struct Instructions {}
@@ -37,63 +42,66 @@ struct Instructions {}
 #[derive(Serialize, Deserialize)]
 pub enum ClientMessage {
     Telnet(TelnetMessage),
-    ChannelMessage(ChannelMessage),
+    Channel(ChannelMessage),
 }
 
-pub fn client_process((central_server, tcp_stream): (Sender<ServerMessage>, TcpStream)) {
-    let (state_lookup, state) = bounded(1);
-    // Let the state process know that we joined
-    central_server
-        .send(ServerMessage::Joined(state_lookup))
-        .unwrap();
-    let server_info = state.receive().unwrap();
+#[derive(Serialize, Deserialize)]
+pub struct TelnetContext {
+    pub stream: TcpStream,
+    pub client: Process<ClientMessage>,
+}
 
-    let mut username = server_info.username.clone();
+pub fn client_process(stream: TcpStream, mailbox: Mailbox<ClientMessage>) {
+    // Username of the client
+    let mut username;
+    // The number of all clients on the server.
+    let total_clients;
 
-    let (interrupt_sender, interrupt_listener) = unbounded();
+    // Look up the coordinator or fail if it doesn't exist.
+    //
+    // Notice that the the `Process<T>` type returned here can't be checked during compile time, as
+    // it can be arbitrary. Sending a message of wrong type to the coordinator will fail during
+    // runtime only, because the deserialization step will fail.
+    let coordinator = lookup("coordinator", "1.0.0").unwrap().unwrap();
+    // Let the coordinator know that we joined.
+    if let CoordinatorResponse::ServerJoined(client_info) =
+        coordinator.request(CoordinatorRequest::JoinServer).unwrap()
+    {
+        // Update username with an coordinator auto generated one.
+        username = client_info.username;
+        total_clients = client_info.total_clients;
+    } else {
+        unreachable!("Received unexpected message");
+    }
 
-    let _tcp_listener = Process::spawn_with(
-        (tcp_stream.clone(), interrupt_sender.clone()),
-        |(tcp_stream, interrupt_sender)| {
-            let mut telnet = Telnet::new(tcp_stream);
-            match (|| {
-                telnet.iac_do_linemode()?;
-                telnet.iac_linemode_zero();
-                telnet.iac_will_echo()?;
-                telnet.iac_do_naws()?;
-                Ok(())
-            })() {
-                Ok(()) => {}
-                Err(error) => {
-                    let _error: anyhow::Error = error;
-                    interrupt_sender
-                        .send(ClientMessage::Telnet(TelnetMessage::Error))
-                        .unwrap();
-                    return;
-                }
-            }
+    // This process is in charge of turning the raw tcp stream into higher level messages that are
+    // sent to the client. It's linked to the client and if one of them fails the other will too.
+    let this = process::this(&mailbox);
+    let (_, mailbox) = process::spawn_link_unwrap_with(
+        mailbox,
+        (this, stream.clone()),
+        |(client, stream), _: Mailbox<()>| {
+            let mut telnet = Telnet::new(stream);
+            telnet.iac_do_linemode().unwrap();
+            telnet.iac_linemode_zero();
+            telnet.iac_will_echo().unwrap();
+            telnet.iac_do_naws().unwrap();
 
             loop {
                 match telnet.next() {
-                    Ok(command) => interrupt_sender
-                        .send(ClientMessage::Telnet(command))
-                        .unwrap(),
-                    Err(_) => {
-                        interrupt_sender
-                            .send(ClientMessage::Telnet(TelnetMessage::Error))
-                            .unwrap();
-                        return;
-                    }
+                    Ok(command) => client.send(ClientMessage::Telnet(command)),
+                    Err(err) => panic!("A telnet error ocurred: {:?}", err),
                 };
             }
         },
-    );
+    )
+    .unwrap();
 
     let window_size = telnet_backend::WindowSize::new();
 
     let welcome = Welcome {
-        username: server_info.username,
-        clients: server_info.clients,
+        username: username.clone(),
+        clients: total_clients,
     };
     let tab = Tab::new(
         "Welcome".to_string(),
@@ -102,15 +110,11 @@ pub fn client_process((central_server, tcp_stream): (Sender<ServerMessage>, TcpS
     );
     let mut tabs = UiTabs::new(tab);
 
-    let mut ui = Ui::new(tcp_stream, window_size.clone(), tabs.clone());
+    let mut ui = Ui::new(stream, window_size.clone(), tabs.clone());
     loop {
-        let interrupt = if let Ok(interrupt) = interrupt_listener.receive() {
-            interrupt
-        } else {
-            break;
-        };
-        match interrupt {
-            // Handle commands coming from tcp
+        let message = mailbox.receive();
+        match message.unwrap() {
+            // Handle commands coming from Telnet
             ClientMessage::Telnet(command) => match command {
                 CtrlC | Error => {
                     break;
@@ -146,81 +150,73 @@ pub fn client_process((central_server, tcp_stream): (Sender<ServerMessage>, TcpS
                             }
                             "/nick" => {
                                 if let Some(nick) = split.next() {
-                                    let (sender, receiver) = bounded(1);
-                                    central_server
-                                        .send(ServerMessage::ChangeName(
-                                            username.clone(),
-                                            nick.to_string(),
-                                            sender,
-                                        ))
-                                        .unwrap();
-                                    if receiver.receive().unwrap() {
-                                        username = nick.to_string();
-                                    } else {
-                                    }
+                                    let nick = nick.to_string();
+                                    if let CoordinatorResponse::NewUsername(new_username) =
+                                        coordinator
+                                            .request(CoordinatorRequest::ChangeName(nick))
+                                            .unwrap()
+                                    {
+                                        username = new_username;
+                                    };
                                 };
                                 ui.render();
                             }
                             "/list" => {
-                                let (sender, receiver) = bounded(1);
-                                central_server.send(ServerMessage::List(sender)).unwrap();
-                                let list = receiver.receive().unwrap();
-                                let list = ChannelList { list };
-                                let tab = Tab::new(
-                                    "Channels".to_string(),
-                                    None,
-                                    TabType::Info(list.render().unwrap()),
-                                );
-                                tabs.add(tab);
+                                if let CoordinatorResponse::ChannelList(list) = coordinator
+                                    .request(CoordinatorRequest::ListChannels)
+                                    .unwrap()
+                                {
+                                    let list = ChannelList { list };
+                                    let tab = Tab::new(
+                                        "Channels".to_string(),
+                                        None,
+                                        TabType::Info(list.render().unwrap()),
+                                    );
+                                    tabs.add(tab);
+                                };
                                 ui.render();
                             }
                             "/drop" => {
                                 let current_channel = tabs.get_selected().get_name();
-                                central_server
-                                    .send(ServerMessage::DropChannel(current_channel))
-                                    .unwrap();
-                                tabs.drop();
+                                if let CoordinatorResponse::ChannelDropped = coordinator
+                                    .request(CoordinatorRequest::LeaveChannel(current_channel))
+                                    .unwrap()
+                                {
+                                    tabs.drop();
+                                };
                                 ui.render();
                             }
                             "/join" => {
-                                let channel = if let Some(channel) = split.next() {
-                                    channel
+                                let channel_name = if let Some(channel_name) = split.next() {
+                                    channel_name
                                 } else {
                                     continue;
                                 };
-                                if channel.starts_with("#") {
-                                    // Request channel from server
-                                    let (channel_lookup, channel_rcv) = bounded(1);
-                                    central_server
-                                        .send(ServerMessage::Channel(
-                                            channel.into(),
-                                            channel_lookup,
+                                if channel_name.starts_with("#") {
+                                    let channel_name = channel_name.to_string();
+                                    let this = process::this(&mailbox);
+                                    if let CoordinatorResponse::ChannelJoined(channel) = coordinator
+                                        .request(CoordinatorRequest::JoinChannel(
+                                            channel_name.clone(),
+                                            this,
                                         ))
-                                        .unwrap();
-                                    let channel_notify = channel_rcv.receive().unwrap();
-                                    // Subscribe to channel
-                                    let (id_sender, id_receiver) = bounded(1);
-                                    channel_notify
-                                        .send(ChannelMessage::Subscribe(
-                                            username.clone(),
-                                            interrupt_sender.clone(),
-                                            id_sender,
-                                        ))
-                                        .unwrap();
-                                    // Wait on channel to assign an id to client
-                                    let (id, last_messages) = id_receiver.receive().unwrap();
-                                    // Create new tab bound to channel
-                                    let tab = Tab::new(
-                                        channel.to_string(),
-                                        Some((id, channel_notify)),
-                                        TabType::Channel(last_messages),
-                                    );
-                                    tabs.add(tab);
-                                    ui.render();
+                                        .unwrap()
+                                    {
+                                        // Get last messages from channel
+                                        // TODO:
+
+                                        // Create new tab bound to channel
+                                        let tab = Tab::new(
+                                            channel_name,
+                                            Some(channel),
+                                            // TODO: Request last messages
+                                            TabType::Channel(Vec::new()),
+                                        );
+                                        tabs.add(tab);
+                                    };
                                 } else {
                                     // Incorrect channel name
                                 }
-
                                 ui.render();
                             }
                             "/exit" => break,
@@ -248,7 +244,7 @@ pub fn client_process((central_server, tcp_stream): (Sender<ServerMessage>, TcpS
             },
 
             // Handle messages coming from channels
-            ClientMessage::ChannelMessage(message) => match message {
+            ClientMessage::Channel(message) => match message {
                 ChannelMessage::Message(channel, timestamp, name, message) => {
                     tabs.add_message(channel, timestamp, name, message);
                     ui.render();
@@ -259,7 +255,7 @@ pub fn client_process((central_server, tcp_stream): (Sender<ServerMessage>, TcpS
     }
 
     // Let the state process know that we left
-    central_server
-        .send(ServerMessage::Left(username.clone(), tabs.names()))
+    coordinator
+        .request(CoordinatorRequest::LeaveServer)
         .unwrap();
 }

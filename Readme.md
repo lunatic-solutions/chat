@@ -28,6 +28,42 @@ Lunatic. Each connection runs in a separate (lightweight) process, has it's own 
 just a diff of esc-sequences back to the terminal to bring it up to date with the current render
 buffer.
 
+#### Process architecture:
+
+        ┌────────────────────────────────────────┐
+        │                    spawn on accept     │     spawn with
+        │         ┌────────┐ with TCP stream  ┌──┴───┐ TCP stream ┌──────┐
+        │         │  main  ├─────────────────►│client├─────x─────►│telnet│
+        x         └───┬────┘ and coordinator  └─┬─┬──┘            └───┬──┘
+        │       spawn │                         │ │                   │
+        │             ▼                         │ │     TELNET:       │
+        │       ┌───────────┐                   │ │◄─── esc input  ───┤
+        │       │coordinator├────────x──────────┘ │     enter input   │
+        │       └─┬───────┬─┘                     │     letter input  │
+        │spawn if │       │     join channel      │     window size   │
+        │channel  │       │◄─── list channels ────┤     changed       │
+        │doesn't  x       │     change name       │     ....          │
+        │exist    │       │                       │                  ─┴─
+        │         ▼       │                       │
+        │    ┌───────┐    │                       │
+        └────┤channel│    │     channels list     │
+             └┬──────┘    ├──── name changed ────►│
+              │           │                       │
+              ├─ update ─►│                       │
+              │  stats    │                       │
+              │          ─┴─                      │
+              │                                   │
+              │            leave channel          │
+              │◄────────── new message ───────────┤
+              │                                   │
+              ├─────────── joined      ──────────►│
+              │            new message            │
+             ─┴─                                 ─┴─
+
+Each rectangle represents a process. The `main` process will spawn the `coordinator` as one process
+and each `client` as a separate one. If there is an `x` between them, it means that the processes
+are linked together.
+
 ### Build & run instructions
 
 If you have [rustup](https://rustup.rs/) installed:

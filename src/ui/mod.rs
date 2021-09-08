@@ -17,7 +17,7 @@ use tui::{
     widgets::{Block, Borders, Tabs},
 };
 
-use lunatic::{channel::Sender, net::TcpStream};
+use lunatic::{net::TcpStream, process::Process};
 use telnet_backend::TelnetBackend;
 
 use crate::channel::ChannelMessage;
@@ -199,7 +199,7 @@ impl UiTabs {
             return;
         }
         let index = mutable.selected;
-        mutable.tabs.remove(index).drop();
+        mutable.tabs.remove(index);
         if index != 0 {
             mutable.selected -= 1;
         }
@@ -255,7 +255,7 @@ impl UiTabs {
         selected.clear()
     }
 
-    pub fn names(&self) -> Vec<String> {
+    pub fn _names(&self) -> Vec<String> {
         let immutable = self.inner.as_ref().borrow();
         immutable.tabs.iter().map(|tab| tab.name.clone()).collect()
     }
@@ -265,16 +265,12 @@ impl UiTabs {
 pub struct Tab {
     name: String,
     tab_type: TabType,
-    notifier: Option<(u32, Sender<ChannelMessage>)>,
+    notifier: Option<Process<ChannelMessage>>,
     input: String,
 }
 
 impl Tab {
-    pub fn new(
-        name: String,
-        notifier: Option<(u32, Sender<ChannelMessage>)>,
-        tab_type: TabType,
-    ) -> Self {
+    pub fn new(name: String, notifier: Option<Process<ChannelMessage>>, tab_type: TabType) -> Self {
         Self {
             name,
             tab_type,
@@ -308,21 +304,13 @@ impl Tab {
     }
 
     pub fn message(&self, timestamp: String, user: String, message: String) {
-        if let Some((_id, notifier)) = &self.notifier {
-            notifier
-                .send(ChannelMessage::Message(
-                    "".to_string(),
-                    timestamp,
-                    user,
-                    message,
-                ))
-                .unwrap();
-        }
-    }
-
-    pub fn drop(&self) {
-        if let Some((id, notifier)) = &self.notifier {
-            notifier.send(ChannelMessage::Unsubscribe(*id)).unwrap();
+        if let Some(notifier) = &self.notifier {
+            notifier.send(ChannelMessage::Message(
+                "".to_string(),
+                timestamp,
+                user,
+                message,
+            ));
         }
     }
 }

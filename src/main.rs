@@ -1,16 +1,14 @@
 mod channel;
 mod client;
-mod server;
+mod coordinator;
 mod telnet;
 mod ui;
 
-use lunatic::channel::unbounded;
-use lunatic::net::TcpListener;
-use lunatic::Process;
-
 use clap::{App, Arg};
+use lunatic::{net::TcpListener, process, Config, Environment, Mailbox};
 
-fn main() {
+#[lunatic::main]
+fn main(_: Mailbox<()>) {
     let matches = App::new("lunatic.chat")
         .version("0.1")
         .author("Bernard K. <me@kolobara.com>")
@@ -18,16 +16,26 @@ fn main() {
         .arg(Arg::new("PORT").about("Sets the listening port for the server"))
         .get_matches();
 
-    // This channel is used to allow communication between the main server process and all connected clients.
-    let (state_sender, state_receiver) = unbounded();
+    // Create a specific environment for clients and limit their memory use to 5 Mb.
+    let mut client_conf = Config::new(5_000_000, None);
+    client_conf.allow_namespace("lunatic::");
+    client_conf.allow_namespace("wasi_snapshot_preview1::random_get");
+    let mut client_env = Environment::new(client_conf).unwrap();
+    let client_module = client_env.add_this_module().unwrap();
 
-    Process::spawn_with(state_receiver, server::server_process).detach();
+    // Create a coordinator and register it inside the environment
+    let coordinator = process::spawn(coordinator::coordinator_process).unwrap();
+    client_env
+        .register("coordinator", "1.0.0", coordinator)
+        .unwrap();
 
     let port = matches.value_of("PORT").unwrap_or("2323");
     println!("Started server on port {}", port);
     let address = format!("0.0.0.0:{}", port);
     let listener = TcpListener::bind(address).unwrap();
-    while let Ok(tcp_stream) = listener.accept() {
-        Process::spawn_with((state_sender.clone(), tcp_stream), client::client_process).detach();
+    while let Ok((stream, _)) = listener.accept() {
+        client_module
+            .spawn_with(stream, client::client_process)
+            .unwrap();
     }
 }
