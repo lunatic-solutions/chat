@@ -20,6 +20,7 @@ fn main(_: Mailbox<()>) {
     let mut client_conf = Config::new(5_000_000, None);
     client_conf.allow_namespace("lunatic::");
     client_conf.allow_namespace("wasi_snapshot_preview1::random_get");
+    client_conf.allow_namespace("wasi_snapshot_preview1::clock_time_get");
     let mut client_env = Environment::new(client_conf).unwrap();
     let client_module = client_env.add_this_module().unwrap();
 

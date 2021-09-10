@@ -22,7 +22,7 @@ pub enum CoordinatorRequest {
     LeaveChannel(String),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub enum CoordinatorResponse {
     ServerJoined(Info),
     ServerLeft,
@@ -32,7 +32,7 @@ pub enum CoordinatorResponse {
     ChannelDropped,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct Info {
     pub username: String,
     pub total_clients: usize,
@@ -152,6 +152,7 @@ pub fn coordinator_process(mailbox: Mailbox<Request<CoordinatorRequest, Coordina
                         // Create a new channel process
                         let channel =
                             process::spawn_with(channel_name.clone(), channel_process).unwrap();
+                        channels.insert(channel_name.clone(), (channel.clone(), 1));
                         channel.send(ChannelMessage::Join(client.clone()));
                         channel
                     };
@@ -170,6 +171,7 @@ pub fn coordinator_process(mailbox: Mailbox<Request<CoordinatorRequest, Coordina
                     if left == 0 {
                         channels.remove(channel_name);
                     }
+                    message.reply(CoordinatorResponse::ChannelDropped);
                 }
             }
         }

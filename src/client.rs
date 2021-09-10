@@ -1,15 +1,16 @@
+use crate::channel::ChannelMessage;
+use crate::{coordinator::CoordinatorRequest, telnet::Telnet};
 use crate::{
-    channel::ChannelMessage,
     coordinator::CoordinatorResponse,
     ui::{Tab, TabType, Ui, UiTabs},
 };
-use crate::{coordinator::CoordinatorRequest, telnet::Telnet};
 use crate::{
     telnet::TelnetMessage::{self, *},
     ui::telnet_backend,
 };
 use askama::Template;
 use chrono::{DateTime, Local};
+use lunatic::Tag;
 use lunatic::{
     lookup,
     net::TcpStream,
@@ -42,7 +43,13 @@ struct Instructions {}
 #[derive(Serialize, Deserialize)]
 pub enum ClientMessage {
     Telnet(TelnetMessage),
-    Channel(ChannelMessage),
+    Channel(Channel),
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum Channel {
+    Message(String, String, String, String),
+    LastMessages(Vec<(String, String, String)>),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -178,12 +185,14 @@ pub fn client_process(stream: TcpStream, mailbox: Mailbox<ClientMessage>) {
                             }
                             "/drop" => {
                                 let current_channel = tabs.get_selected().get_name();
-                                if let CoordinatorResponse::ChannelDropped = coordinator
-                                    .request(CoordinatorRequest::LeaveChannel(current_channel))
-                                    .unwrap()
-                                {
-                                    tabs.drop();
-                                };
+                                // If the tab is a channel notify coordinator that we are leaving.
+                                if current_channel.starts_with("#") {
+                                    let result = coordinator
+                                        .request(CoordinatorRequest::LeaveChannel(current_channel))
+                                        .unwrap();
+                                    assert_eq!(result, CoordinatorResponse::ChannelDropped);
+                                }
+                                tabs.drop();
                                 ui.render();
                             }
                             "/join" => {
@@ -198,21 +207,25 @@ pub fn client_process(stream: TcpStream, mailbox: Mailbox<ClientMessage>) {
                                     if let CoordinatorResponse::ChannelJoined(channel) = coordinator
                                         .request(CoordinatorRequest::JoinChannel(
                                             channel_name.clone(),
-                                            this,
+                                            this.clone(),
                                         ))
                                         .unwrap()
                                     {
                                         // Get last messages from channel
-                                        // TODO:
-
-                                        // Create new tab bound to channel
-                                        let tab = Tab::new(
-                                            channel_name,
-                                            Some(channel),
-                                            // TODO: Request last messages
-                                            TabType::Channel(Vec::new()),
-                                        );
-                                        tabs.add(tab);
+                                        let tag = Tag::new();
+                                        channel.tag_send(tag, ChannelMessage::LastMessages(this));
+                                        if let ClientMessage::Channel(Channel::LastMessages(
+                                            last_messages,
+                                        )) = mailbox.tag_receive(tag).unwrap()
+                                        {
+                                            // Create new tab bound to channel
+                                            let tab = Tab::new(
+                                                channel_name,
+                                                Some(channel),
+                                                TabType::Channel(last_messages),
+                                            );
+                                            tabs.add(tab);
+                                        };
                                     };
                                 } else {
                                     // Incorrect channel name
@@ -245,7 +258,7 @@ pub fn client_process(stream: TcpStream, mailbox: Mailbox<ClientMessage>) {
 
             // Handle messages coming from channels
             ClientMessage::Channel(message) => match message {
-                ChannelMessage::Message(channel, timestamp, name, message) => {
+                Channel::Message(channel, timestamp, name, message) => {
                     tabs.add_message(channel, timestamp, name, message);
                     ui.render();
                 }

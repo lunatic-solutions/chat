@@ -305,12 +305,7 @@ impl Tab {
 
     pub fn message(&self, timestamp: String, user: String, message: String) {
         if let Some(notifier) = &self.notifier {
-            notifier.send(ChannelMessage::Message(
-                "".to_string(),
-                timestamp,
-                user,
-                message,
-            ));
+            notifier.send(ChannelMessage::Message(timestamp, user, message));
         }
     }
 }
