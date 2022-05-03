@@ -2,8 +2,9 @@
 
 A telnet chat server written in Rust, running on [Lunatic](https://github.com/lunatic-solutions/lunatic).
 
-I wrote a blog post about the implementation,
-[you can read it here](https://lunatic.solutions/blog/lunatic-chat/).
+~I wrote a blog post about the implementation,
+[you can read it here](https://lunatic.solutions/blog/lunatic-chat/)~. The implementation has significantly
+changed since the blog was written and updated to the [new higher-level process architecture][0] in lunatic.
 
 <div align="center">
     <a href="#">
@@ -18,51 +19,27 @@ If you just would like to try it out, join the hosted version with:
 telnet eu.lunatic.chat
 ```
 
-You should pick the one closer to you as all the rendering is done on the backend and lower latency
-will mean better UX.
 
 ### Architecture
 
 The server is written in Rust. The Rust code is then compiled to WebAssembly and runs on top of
-Lunatic. Each connection runs in a separate (lightweight) process, has it's own state and sends
+Lunatic. Each connection runs in a separate (lightweight) process, has its own state and sends
 just a diff of esc-sequences back to the terminal to bring it up to date with the current render
 buffer.
 
 #### Process architecture:
 
-        ┌────────────────────────────────────────┐
-        │                    spawn on accept     │     spawn with
-        │         ┌────────┐ with TCP stream  ┌──┴───┐ TCP stream ┌──────┐
-        │         │  main  ├─────────────────►│client├─────x─────►│telnet│
-        x         └───┬────┘ and coordinator  └─┬─┬──┘            └───┬──┘
-        │       spawn │                         │ │                   │
-        │             ▼                         │ │     TELNET:       │
-        │       ┌───────────┐                   │ │◄─── esc input  ───┤
-        │       │coordinator├────────x──────────┘ │     enter input   │
-        │       └─┬───────┬─┘                     │     letter input  │
-        │spawn if │       │     join channel      │     window size   │
-        │channel  │       │◄─── list channels ────┤     changed       │
-        │doesn't  x       │     change name       │     ....          │
-        │exist    │       │                       │                  ─┴─
-        │         ▼       │                       │
-        │    ┌───────┐    │                       │
-        └────┤channel│    │     channels list     │
-             └┬──────┘    ├──── name changed ────►│
-              │           │                       │
-              ├─ update ─►│                       │
-              │  stats    │                       │
-              │          ─┴─                      │
-              │                                   │
-              │            leave channel          │
-              │◄────────── new message ───────────┤
-              │                                   │
-              ├─────────── joined      ──────────►│
-              │            new message            │
-             ─┴─                                 ─┴─
+<div align="center">
+    <a href="#">
+        <img src="https://raw.githubusercontent.com/lunatic-solutions/chat/main/assets/diagram.png" alt="Lunatic logo">
+    </a>
+    <p>&nbsp;</p>
+</div>
 
-Each rectangle represents a process. The `main` process will spawn the `coordinator` as one process
-and each `client` as a separate one. If there is an `x` between them, it means that the processes
-are linked together.
+Each rectangle represents a process. The `ClientProcess` holds the current render state that can be changed
+by new commands coming from telnet or new messages from channels that the client joined. The `CoordinatorSup`
+is a supervisor that will restart the global coordinator if it dies. All processes that depend on the
+coordinator are linked to it, if it dies it will disconnect all clients and kill all channels.
 
 ### Build & run instructions
 
@@ -82,3 +59,5 @@ in the target folder and run it with `lunatic path/to/telnet-chat.wasm`.
 ### Licence
 
 MIT
+
+[0]: https://github.com/lunatic-solutions/rust-lib/releases/tag/v0.9.0

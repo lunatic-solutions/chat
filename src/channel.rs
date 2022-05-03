@@ -1,60 +1,81 @@
 use std::collections::HashMap;
 
-use lunatic::{process::Process, Mailbox};
+use lunatic::process::{AbstractProcess, Message, ProcessMessage, ProcessRef, ProcessRequest};
 use serde::{Deserialize, Serialize};
 
-use crate::client::{Channel, ClientMessage};
+use crate::client::{ChannelMessage, ClientProcess};
 
-#[derive(Serialize, Deserialize)]
-pub enum ChannelMessage {
-    Join(Process<ClientMessage>),
-    /// Client sent message to the channel
-    Message(String, String, String),
-    /// Client requested last messages
-    LastMessages(Process<ClientMessage>),
-    /// Client with id left
-    Drop(u128),
+/// A channel dispatches messages to all clients that are part of it.
+///
+/// It also keeps the last few messages saved, so that it can bootstrap a new client that joins.
+pub struct ChannelProcess {
+    clients: HashMap<u128, ProcessRef<ClientProcess>>,
+    last_messages: Vec<(String, String, String)>,
 }
 
-pub fn channel_process(channel_name: String, mailbox: Mailbox<ChannelMessage>) {
-    let mut clients = HashMap::new();
-    let mut last_messages = Vec::new();
+impl AbstractProcess for ChannelProcess {
+    type Arg = String;
+    type State = Self;
 
-    loop {
-        match mailbox.receive_with_tag().unwrap() {
-            (ChannelMessage::Join(client), _) => {
-                clients.insert(client.id(), client);
-            }
+    fn init(_: ProcessRef<Self>, _name: Self::Arg) -> Self::State {
+        ChannelProcess {
+            clients: HashMap::new(),
+            last_messages: Vec::new(),
+        }
+    }
+}
 
-            (ChannelMessage::LastMessages(client), tag) => client.tag_send(
-                tag,
-                ClientMessage::Channel(Channel::LastMessages(last_messages.clone())),
-            ),
+/// A `Join` message is sent by clients that would like to join the channel.
+///
+/// It contains a reference to the client.
+#[derive(Serialize, Deserialize)]
+pub struct Join(pub ProcessRef<ClientProcess>);
+impl ProcessMessage<Join> for ChannelProcess {
+    fn handle(state: &mut Self::State, Join(client): Join) {
+        state.clients.insert(client.uuid(), client);
+    }
+}
 
-            (ChannelMessage::Drop(id), _) => {
-                clients.remove(&id);
-                if clients.is_empty() {
-                    break;
-                }
-            }
+/// Returns up to 10 last messages received by the channel.
+#[derive(Serialize, Deserialize)]
+pub struct LastMessages;
+impl ProcessRequest<LastMessages> for ChannelProcess {
+    type Response = Vec<(String, String, String)>;
 
-            (ChannelMessage::Message(timestamp, name, message), _) => {
-                // Save
-                last_messages.push((timestamp.clone(), name.clone(), message.clone()));
-                // If too many last messages, drain
-                if last_messages.len() > 10 {
-                    last_messages.drain(0..5);
-                }
-                // Broadcast
-                for (_id, client) in clients.iter() {
-                    let _ = client.send(ClientMessage::Channel(Channel::Message(
-                        channel_name.clone(),
-                        timestamp.clone(),
-                        name.clone(),
-                        message.clone(),
-                    )));
-                }
-            }
+    fn handle(state: &mut Self::State, _: LastMessages) -> Self::Response {
+        state.last_messages.clone()
+    }
+}
+
+/// A `Leave` message is sent by clients that would like to leave the channel.
+///
+/// It contains a reference to the client.
+#[derive(Serialize, Deserialize)]
+pub struct Leave(pub ProcessRef<ClientProcess>);
+impl ProcessMessage<Leave> for ChannelProcess {
+    fn handle(state: &mut Self::State, Leave(client): Leave) {
+        state.clients.remove(&client.uuid());
+    }
+}
+
+/// A new message sent to the channel.
+///
+/// It contains ("", timestamp, name, message content).
+///
+/// The first argument is reserved for the name
+impl ProcessMessage<ChannelMessage> for ChannelProcess {
+    fn handle(state: &mut Self::State, message: ChannelMessage) {
+        // Save
+        state
+            .last_messages
+            .push((message.1.clone(), message.2.clone(), message.3.clone()));
+        // If too many last messages, drain
+        if state.last_messages.len() > 10 {
+            state.last_messages.drain(0..5);
+        }
+        // Broadcast message to all clients
+        for (_id, client) in state.clients.iter() {
+            let _ = client.send(message.clone());
         }
     }
 }

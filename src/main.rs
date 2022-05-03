@@ -4,39 +4,34 @@ mod coordinator;
 mod telnet;
 mod ui;
 
-use clap::{App, Arg};
-use lunatic::{net::TcpListener, process, Config, Environment, Mailbox};
+use clap::{Arg, Command};
+use lunatic::{net::TcpListener, process::StartProcess, Mailbox, ProcessConfig};
+
+use crate::{client::ClientProcess, coordinator::CoordinatorSup};
 
 #[lunatic::main]
 fn main(_: Mailbox<()>) {
-    let matches = App::new("lunatic.chat")
+    let matches = Command::new("lunatic.chat")
         .version("0.1")
         .author("Bernard K. <me@kolobara.com>")
         .about("A telnet chat server")
-        .arg(Arg::new("PORT").about("Sets the listening port for the server"))
+        .arg(Arg::new("PORT").help("Sets the listening port for the server"))
         .get_matches();
 
-    // Create a specific environment for clients and limit their memory use to 5 Mb.
-    let mut client_conf = Config::new(5_000_000, None);
-    client_conf.allow_namespace("lunatic::");
-    client_conf.allow_namespace("wasi_snapshot_preview1::random_get");
-    client_conf.allow_namespace("wasi_snapshot_preview1::clock_time_get");
-    let mut client_env = Environment::new(client_conf).unwrap();
-    let client_module = client_env.add_this_module().unwrap();
-
-    // Create a coordinator and register it inside the environment
-    let coordinator = process::spawn(coordinator::coordinator_process).unwrap();
-    client_env
-        .register("coordinator", "1.0.0", coordinator)
-        .unwrap();
+    // Create a coordinator supervisor and register the coordinator under the "coordinator" name.
+    CoordinatorSup::start_link("coordinator".to_owned(), None);
 
     let port = matches.value_of("PORT").unwrap_or("2323");
     println!("Started server on port {}", port);
     let address = format!("0.0.0.0:{}", port);
     let listener = TcpListener::bind(address).unwrap();
+
+    // Limit client's memory usage to 5 Mb & allow sub-processes.
+    let mut client_conf = ProcessConfig::new();
+    client_conf.set_max_memory(5_000_000);
+    client_conf.set_can_spawn_processes(true);
+
     while let Ok((stream, _)) = listener.accept() {
-        client_module
-            .spawn_with(stream, client::client_process)
-            .unwrap();
+        ClientProcess::start_config(stream, None, &client_conf);
     }
 }

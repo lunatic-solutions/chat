@@ -1,36 +1,16 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    channel::{channel_process, ChannelMessage},
-    client::ClientMessage,
+    channel::{self, ChannelProcess},
+    client::ClientProcess,
 };
 
 use lunatic::{
-    process::{self, Process},
-    Mailbox, Message, Request, Tag, TransformMailbox,
+    host,
+    process::{AbstractProcess, Message, ProcessMessage, ProcessRef, ProcessRequest, StartProcess},
+    supervisor::Supervisor,
 };
 use serde::{Deserialize, Serialize};
-
-/// All requests a coordinator can get.
-#[derive(Serialize, Deserialize)]
-pub enum CoordinatorRequest {
-    JoinServer,
-    LeaveServer,
-    ChangeName(String),
-    ListChannels,
-    JoinChannel(String, Process<ClientMessage>),
-    LeaveChannel(String),
-}
-
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
-pub enum CoordinatorResponse {
-    ServerJoined(Info),
-    ServerLeft,
-    NewUsername(String),
-    ChannelList(Vec<(String, usize)>),
-    ChannelJoined(Process<ChannelMessage>),
-    ChannelDropped,
-}
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct Info {
@@ -40,140 +20,173 @@ pub struct Info {
 
 // A reference to a client that joined the server.
 struct Client {
-    link: Tag,
     username: String,
     // All channels that the client joined
-    channels: HashSet<Process<ChannelMessage>>,
+    channels: HashSet<ProcessRef<ChannelProcess>>,
 }
 
-/// The coordinator keeps track of connected clients and active channels.
-/// It's also in charge of assigning unique usernames to new clients.
-pub fn coordinator_process(mailbox: Mailbox<Request<CoordinatorRequest, CoordinatorResponse>>) {
-    let mut clients: HashMap<u128, Client> = HashMap::new();
-    let mut channels: HashMap<String, (Process<ChannelMessage>, usize)> = HashMap::new();
+/// The `CoordinatorSup` is supervising one global instance of the `CoordinatorProcess`.
+pub struct CoordinatorSup;
+impl Supervisor for CoordinatorSup {
+    type Arg = String;
+    type Children = CoordinatorProcess;
 
-    let mailbox = mailbox.catch_link_panic();
+    fn init(config: &mut lunatic::supervisor::SupervisorConfig<Self>, name: Self::Arg) {
+        // Always register the `CoordinatorProcess` under the name passed to the supervisor.
+        config.children_args(((), Some(name)))
+    }
+}
 
-    loop {
-        let message = mailbox.receive();
+/// The coordinator is in charge of keeping track of all connected clients and active channels.
+///
+/// A client will inform the coordinator that it joined the server, request a name change or join
+/// a channel. The client can also query the coordinator for all currently active channels.
+pub struct CoordinatorProcess {
+    next_id: u64,
+    clients: HashMap<u128, Client>,
+    channels: HashMap<String, (ProcessRef<ChannelProcess>, usize)>,
+}
+impl AbstractProcess for CoordinatorProcess {
+    type Arg = ();
+    type State = Self;
 
-        // If the client dies remove it from the list and notify all channels.
-        if let Message::Signal(link) = message {
-            // Find the correct link
-            let id = if let Some((id, client)) =
-                clients.iter().find(|(_, client)| client.link == link)
-            {
-                // Notify all channels that the client is part of about leaving.
-                client
-                    .channels
-                    .iter()
-                    .for_each(|channel| channel.send(ChannelMessage::Drop(*id)));
-                Some(*id)
-            } else {
-                None
-            };
-            if let Some(id) = id {
-                clients.remove(&id);
-            }
+    fn init(_: ProcessRef<Self>, _: Self::Arg) -> Self::State {
+        // Coordinator shouldn't die when a client dies. This makes the link one-directional.
+        unsafe { host::api::process::die_when_link_dies(0) };
+
+        CoordinatorProcess {
+            next_id: 0,
+            clients: HashMap::new(),
+            channels: HashMap::new(),
         }
+    }
+}
 
-        if let Message::Normal(message) = message {
-            let message = message.unwrap();
-            let data = message.data();
+/// A `JoinServer` is sent out by a client that just connected to the server.
+///
+/// The coordinator will assign a unique `username` to the client and send back some server info,
+/// like the total count of connected clients.
+#[derive(Serialize, Deserialize)]
+pub struct JoinServer(pub ProcessRef<ClientProcess>);
+impl ProcessRequest<JoinServer> for CoordinatorProcess {
+    type Response = Info;
 
-            match data {
-                CoordinatorRequest::JoinServer => {
-                    let client = message.sender();
-                    let client_link = client.link();
-                    // Tags are always unique inside of a process.
-                    let client_username = format!("user_{}", client_link.id());
+    fn handle(state: &mut Self::State, JoinServer(client): JoinServer) -> Self::Response {
+        state.next_id += 1;
+        let client_username = format!("user_{}", state.next_id);
 
-                    clients.insert(
-                        client.id(),
-                        Client {
-                            link: client_link,
-                            username: client_username.clone(),
-                            channels: HashSet::new(),
-                        },
-                    );
+        state.clients.insert(
+            client.uuid(),
+            Client {
+                username: client_username.clone(),
+                channels: HashSet::new(),
+            },
+        );
 
-                    message.reply(CoordinatorResponse::ServerJoined(Info {
-                        username: client_username,
-                        total_clients: clients.len(),
-                    }))
-                }
+        Info {
+            username: client_username,
+            total_clients: state.clients.len(),
+        }
+    }
+}
 
-                CoordinatorRequest::LeaveServer => {
-                    let client = message.sender();
-                    let client_id = client.id();
-                    // Notify all channels that the client is part of about leaving.
-                    clients
-                        .get(&client_id)
-                        .unwrap()
-                        .channels
-                        .iter()
-                        .for_each(|channel| channel.send(ChannelMessage::Drop(client_id)));
-                    clients.remove(&client_id);
-                    message.reply(CoordinatorResponse::ServerLeft)
-                }
+/// Sent by client when leaving the server.
+///
+/// TODO: If the client fails unexpectedly, we need also to clean up after it.
+#[derive(Serialize, Deserialize)]
+pub struct LeaveServer(pub ProcessRef<ClientProcess>);
+impl ProcessMessage<LeaveServer> for CoordinatorProcess {
+    fn handle(state: &mut Self::State, LeaveServer(client): LeaveServer) {
+        state
+            .clients
+            .get(&client.uuid())
+            .unwrap()
+            .channels
+            .iter()
+            .for_each(|channel| channel.send(channel::Leave(client.clone())));
+        state.clients.remove(&client.uuid());
+    }
+}
 
-                CoordinatorRequest::ChangeName(new_name) => {
-                    let client = message.sender();
-                    // Check if username is taken
-                    if let Some(old_name) =
-                        clients.values().find(|client| client.username == *new_name)
-                    {
-                        // Don't change name if it's taken
-                        message.reply(CoordinatorResponse::NewUsername(
-                            old_name.username.to_string(),
-                        ));
-                    } else {
-                        let new_name = new_name.to_string();
-                        clients.get_mut(&client.id()).unwrap().username = new_name.clone();
-                        message.reply(CoordinatorResponse::NewUsername(new_name));
-                    }
-                }
+/// Request for a name change by the client.
+#[derive(Serialize, Deserialize)]
+pub struct ChangeName(pub ProcessRef<ClientProcess>, pub String);
+impl ProcessRequest<ChangeName> for CoordinatorProcess {
+    type Response = String;
 
-                CoordinatorRequest::ListChannels => {
-                    let channels: Vec<(String, usize)> = channels
-                        .iter()
-                        .map(|(channel_name, (_, size))| (channel_name.clone(), *size))
-                        .collect();
-                    message.reply(CoordinatorResponse::ChannelList(channels));
-                }
+    fn handle(state: &mut Self::State, ChangeName(client, new_name): ChangeName) -> Self::Response {
+        // Check if username is taken
+        if let Some(old_name) = state
+            .clients
+            .values()
+            .find(|client| client.username == *new_name)
+        {
+            // Don't change name if it's taken
+            old_name.username.to_string()
+        } else {
+            state.clients.get_mut(&client.uuid()).unwrap().username = new_name.clone();
+            new_name
+        }
+    }
+}
 
-                CoordinatorRequest::JoinChannel(channel_name, client) => {
-                    let channel = if let Some(exists) = channels.get_mut(channel_name) {
-                        // Channel already exists
-                        exists.1 += 1;
-                        exists.0.send(ChannelMessage::Join(client.clone()));
-                        exists.0.clone()
-                    } else {
-                        // Create a new channel process
-                        let channel =
-                            process::spawn_with(channel_name.clone(), channel_process).unwrap();
-                        channels.insert(channel_name.clone(), (channel.clone(), 1));
-                        channel.send(ChannelMessage::Join(client.clone()));
-                        channel
-                    };
-                    message.reply(CoordinatorResponse::ChannelJoined(channel));
-                }
-                CoordinatorRequest::LeaveChannel(channel_name) => {
-                    let left = if let Some(exists) = channels.get_mut(channel_name) {
-                        let client = message.sender();
-                        exists.1 -= 1;
-                        exists.0.send(ChannelMessage::Drop(client.id()));
-                        exists.1
-                    } else {
-                        0 // If the channel doesn't exist, attempting to remove it will not have any effect
-                    };
-                    // If this was the last client remove the channel.
-                    if left == 0 {
-                        channels.remove(channel_name);
-                    }
-                    message.reply(CoordinatorResponse::ChannelDropped);
-                }
-            }
+#[derive(Serialize, Deserialize)]
+pub struct ListChannels;
+impl ProcessRequest<ListChannels> for CoordinatorProcess {
+    type Response = Vec<(String, usize)>;
+
+    fn handle(state: &mut Self::State, _: ListChannels) -> Self::Response {
+        state
+            .channels
+            .iter()
+            .map(|(channel_name, (_, size))| (channel_name.clone(), *size))
+            .collect()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct JoinChannel(pub ProcessRef<ClientProcess>, pub String);
+impl ProcessRequest<JoinChannel> for CoordinatorProcess {
+    type Response = ProcessRef<ChannelProcess>;
+
+    fn handle(
+        state: &mut Self::State,
+        JoinChannel(client, channel): JoinChannel,
+    ) -> Self::Response {
+        if let Some(exists) = state.channels.get_mut(&channel) {
+            // Channel already exists
+            exists.1 += 1;
+            exists.0.send(channel::Join(client));
+            exists.0.clone()
+        } else {
+            // Start a new channel process
+            let channel_proc = ChannelProcess::start_link(channel.clone(), None);
+            state
+                .channels
+                .insert(channel.clone(), (channel_proc.clone(), 1));
+            channel_proc.send(channel::Join(client));
+            channel_proc
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct LeaveChannel(pub ProcessRef<ClientProcess>, pub String);
+impl ProcessMessage<LeaveChannel> for CoordinatorProcess {
+    fn handle(state: &mut Self::State, LeaveChannel(client, channel): LeaveChannel) {
+        let left = if let Some(exists) = state.channels.get_mut(&channel) {
+            exists.0.send(channel::Leave(client));
+            exists.1 -= 1;
+            exists.1
+        } else {
+            // If the channel doesn't exist, attempting to remove it will not have any effect
+            usize::MAX
+        };
+        // If this was the last client, shut down the channel and remove it.
+        if left == 0 {
+            let channel_proc = &state.channels.get(&channel).unwrap().0;
+            channel_proc.shutdown();
+            state.channels.remove(&channel);
         }
     }
 }

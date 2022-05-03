@@ -43,13 +43,11 @@ impl Telnet {
 
     pub fn iac_do_linemode(&mut self) -> Result<()> {
         let buffer: [u8; 3] = [IAC, DO, LINEMODE];
-        self.stream.write(&buffer)?;
-        self.stream.flush()?;
+        self.stream.write_all(&buffer)?;
 
         while !self.linemode {
-            match self.next()? {
-                TelnetMessage::IacWontLinemode => return Err(anyhow!("Linemode not supported")),
-                _ => {}
+            if let TelnetMessage::IacWontLinemode = self.next()? {
+                return Err(anyhow!("Linemode not supported"));
             }
         }
         Ok(())
@@ -58,18 +56,17 @@ impl Telnet {
     // Tell the client not to do local editing
     pub fn iac_linemode_zero(&mut self) {
         let buffer: [u8; 7] = [IAC, SB, LINEMODE, 1, 0, IAC, SE];
-        self.stream.write(&buffer).unwrap();
+        self.stream.write_all(&buffer).unwrap();
     }
 
     // Tell the client to report window size changes
     pub fn iac_do_naws(&mut self) -> Result<()> {
         let buffer: [u8; 3] = [IAC, DO, NAWS];
-        self.stream.write(&buffer)?;
+        self.stream.write_all(&buffer)?;
 
         while !self.naws {
-            match self.next()? {
-                TelnetMessage::IacWontNaws => return Err(anyhow!("NAWS not supported")),
-                _ => {}
+            if let TelnetMessage::IacWontNaws = self.next()? {
+                return Err(anyhow!("NAWS not supported"));
             }
         }
         Ok(())
@@ -78,12 +75,11 @@ impl Telnet {
     // Tell the client that we will be doing the echoing
     pub fn iac_will_echo(&mut self) -> Result<()> {
         let buffer: [u8; 3] = [IAC, WILL, ECHO];
-        self.stream.write(&buffer)?;
+        self.stream.write_all(&buffer)?;
 
         while !self.echo {
-            match self.next()? {
-                TelnetMessage::IacDontEcho => return Err(anyhow!("Echo not supported")),
-                _ => {}
+            if let TelnetMessage::IacDontEcho = self.next()? {
+                return Err(anyhow!("Echo not supported"));
             }
         }
         Ok(())
@@ -148,7 +144,7 @@ impl Telnet {
                     // First deduplicate 255 values
                     let slice = multibyte.get(3..len - 2).unwrap();
                     let vec: Vec<&u8> = slice
-                        .into_iter()
+                        .iter()
                         .dedup_by(|first, second| **first == 255 && **second == 255)
                         .collect();
                     (

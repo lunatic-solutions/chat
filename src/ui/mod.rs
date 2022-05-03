@@ -1,7 +1,7 @@
 pub mod telnet_backend;
 pub mod termion;
 
-use std::{cell::RefCell, mem, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 use tui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -17,10 +17,13 @@ use tui::{
     widgets::{Block, Borders, Tabs},
 };
 
-use lunatic::{net::TcpStream, process::Process};
+use lunatic::{
+    net::TcpStream,
+    process::{Message, ProcessRef},
+};
 use telnet_backend::TelnetBackend;
 
-use crate::channel::ChannelMessage;
+use crate::{channel::ChannelProcess, client::ChannelMessage};
 
 pub struct Ui {
     terminal: Terminal<TelnetBackend>,
@@ -265,12 +268,16 @@ impl UiTabs {
 pub struct Tab {
     name: String,
     tab_type: TabType,
-    notifier: Option<Process<ChannelMessage>>,
+    notifier: Option<ProcessRef<ChannelProcess>>,
     input: String,
 }
 
 impl Tab {
-    pub fn new(name: String, notifier: Option<Process<ChannelMessage>>, tab_type: TabType) -> Self {
+    pub fn new(
+        name: String,
+        notifier: Option<ProcessRef<ChannelProcess>>,
+        tab_type: TabType,
+    ) -> Self {
         Self {
             name,
             tab_type,
@@ -292,7 +299,7 @@ impl Tab {
     }
 
     pub fn clear(&mut self) -> String {
-        mem::replace(&mut self.input, String::new())
+        std::mem::take(&mut self.input)
     }
 
     pub fn input_del_char(&mut self) {
@@ -305,7 +312,7 @@ impl Tab {
 
     pub fn message(&self, timestamp: String, user: String, message: String) {
         if let Some(notifier) = &self.notifier {
-            notifier.send(ChannelMessage::Message(timestamp, user, message));
+            notifier.send(ChannelMessage(self.name.clone(), timestamp, user, message));
         }
     }
 }
