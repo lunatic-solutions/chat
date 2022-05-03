@@ -7,10 +7,7 @@ A telnet chat server written in Rust, running on [Lunatic](https://github.com/lu
 changed since the blog was written and updated to the [new higher-level process architecture][0] in lunatic.
 
 <div align="center">
-    <a href="#">
-        <img src="https://raw.githubusercontent.com/lunatic-solutions/chat/main/assets/ss.png" alt="Lunatic logo">
-    </a>
-    <p>&nbsp;</p>
+    <img src="https://raw.githubusercontent.com/lunatic-solutions/chat/main/assets/ss.png" alt="Terminal look example">
 </div>
 
 If you just would like to try it out, join the hosted version with:
@@ -30,10 +27,7 @@ buffer.
 #### Process architecture:
 
 <div align="center">
-    <a href="#">
-        <img src="https://raw.githubusercontent.com/lunatic-solutions/chat/main/assets/diagram.png" alt="Lunatic logo">
-    </a>
-    <p>&nbsp;</p>
+    <img src="https://raw.githubusercontent.com/lunatic-solutions/chat/main/assets/diagram.png" alt="Architecture diagram">
 </div>
 
 Each rectangle represents a process. The `ClientProcess` holds the current render state that can be changed
