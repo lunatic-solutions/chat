@@ -145,7 +145,7 @@ impl MessageHandler<TelnetCommand> for ClientProcess {
                                 None,
                                 TabType::Info(instructions.render().unwrap()),
                             );
-                            state.tabs.add(tab);
+                            state.tabs.add_or_switch(tab);
                             state.ui.render();
                         }
                         "/nick" => {
@@ -164,7 +164,7 @@ impl MessageHandler<TelnetCommand> for ClientProcess {
                                 None,
                                 TabType::Info(list.render().unwrap()),
                             );
-                            state.tabs.add(tab);
+                            state.tabs.add_or_switch(tab);
                             state.ui.render();
                         }
                         "/drop" => {
@@ -199,7 +199,7 @@ impl MessageHandler<TelnetCommand> for ClientProcess {
                                     Some(channel),
                                     TabType::Channel(last_messages),
                                 );
-                                state.tabs.add(tab);
+                                state.tabs.add_or_switch(tab);
                             } else {
                                 // Incorrect channel name
                             }

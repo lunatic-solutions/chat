@@ -195,6 +195,21 @@ impl UiTabs {
         mutable.selected = mutable.tabs.len() - 1;
     }
 
+    pub fn switch(&self, name: &str) {
+        if let Some(index) = self.names().iter().position(|n| &n == &&name) {
+            let mut mutable = self.inner.as_ref().borrow_mut();
+            mutable.selected = index;
+        }
+    }
+
+    pub fn add_or_switch(&self, tab: Tab) {
+        if self.names().contains(&tab.name) {
+            self.switch(&tab.name);
+        } else {
+            self.add(tab);
+        }
+    }
+
     pub fn drop(&self) {
         let mut mutable = self.inner.as_ref().borrow_mut();
         // Don't drop the last tab
@@ -258,7 +273,7 @@ impl UiTabs {
         selected.clear()
     }
 
-    pub fn _names(&self) -> Vec<String> {
+    pub fn names(&self) -> Vec<String> {
         let immutable = self.inner.as_ref().borrow();
         immutable.tabs.iter().map(|tab| tab.name.clone()).collect()
     }
