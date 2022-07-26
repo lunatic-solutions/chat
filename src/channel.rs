@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use lunatic::process::{AbstractProcess, Message, ProcessMessage, ProcessRef, ProcessRequest};
+use lunatic::process::{AbstractProcess, Message, MessageHandler, ProcessRef, RequestHandler};
 use serde::{Deserialize, Serialize};
 
 use crate::client::{ChannelMessage, ClientProcess};
@@ -9,7 +9,7 @@ use crate::client::{ChannelMessage, ClientProcess};
 ///
 /// It also keeps the last few messages saved, so that it can bootstrap a new client that joins.
 pub struct ChannelProcess {
-    clients: HashMap<u128, ProcessRef<ClientProcess>>,
+    clients: HashMap<u64, ProcessRef<ClientProcess>>,
     last_messages: Vec<(String, String, String)>,
 }
 
@@ -30,16 +30,16 @@ impl AbstractProcess for ChannelProcess {
 /// It contains a reference to the client.
 #[derive(Serialize, Deserialize)]
 pub struct Join(pub ProcessRef<ClientProcess>);
-impl ProcessMessage<Join> for ChannelProcess {
+impl MessageHandler<Join> for ChannelProcess {
     fn handle(state: &mut Self::State, Join(client): Join) {
-        state.clients.insert(client.uuid(), client);
+        state.clients.insert(client.id(), client);
     }
 }
 
 /// Returns up to 10 last messages received by the channel.
 #[derive(Serialize, Deserialize)]
 pub struct LastMessages;
-impl ProcessRequest<LastMessages> for ChannelProcess {
+impl RequestHandler<LastMessages> for ChannelProcess {
     type Response = Vec<(String, String, String)>;
 
     fn handle(state: &mut Self::State, _: LastMessages) -> Self::Response {
@@ -52,9 +52,9 @@ impl ProcessRequest<LastMessages> for ChannelProcess {
 /// It contains a reference to the client.
 #[derive(Serialize, Deserialize)]
 pub struct Leave(pub ProcessRef<ClientProcess>);
-impl ProcessMessage<Leave> for ChannelProcess {
+impl MessageHandler<Leave> for ChannelProcess {
     fn handle(state: &mut Self::State, Leave(client): Leave) {
-        state.clients.remove(&client.uuid());
+        state.clients.remove(&client.id());
     }
 }
 
@@ -63,7 +63,7 @@ impl ProcessMessage<Leave> for ChannelProcess {
 /// It contains ("", timestamp, name, message content).
 ///
 /// The first argument is reserved for the name
-impl ProcessMessage<ChannelMessage> for ChannelProcess {
+impl MessageHandler<ChannelMessage> for ChannelProcess {
     fn handle(state: &mut Self::State, message: ChannelMessage) {
         // Save
         state

@@ -11,7 +11,7 @@ use crate::{
 };
 use askama::Template;
 use chrono::{DateTime, Local};
-use lunatic::process::{AbstractProcess, Message, ProcessMessage, ProcessRef, Request};
+use lunatic::process::{AbstractProcess, Message, MessageHandler, ProcessRef, Request};
 use lunatic::Process;
 use lunatic::{net::TcpStream, Mailbox};
 use serde::{Deserialize, Serialize};
@@ -113,7 +113,7 @@ impl AbstractProcess for ClientProcess {
 /// Handle data coming in over TCP from telnet.
 #[derive(Serialize, Deserialize)]
 pub struct TelnetCommand(pub TelnetMessage);
-impl ProcessMessage<TelnetCommand> for ClientProcess {
+impl MessageHandler<TelnetCommand> for ClientProcess {
     fn handle(state: &mut Self::State, TelnetCommand(command): TelnetCommand) {
         match command {
             CtrlC | Error => {
@@ -236,7 +236,7 @@ impl ProcessMessage<TelnetCommand> for ClientProcess {
 /// Handle messages sent by a channel to us.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ChannelMessage(pub String, pub String, pub String, pub String);
-impl ProcessMessage<ChannelMessage> for ClientProcess {
+impl MessageHandler<ChannelMessage> for ClientProcess {
     fn handle(
         state: &mut Self::State,
         ChannelMessage(channel, timestamp, name, message): ChannelMessage,
@@ -249,7 +249,7 @@ impl ProcessMessage<ChannelMessage> for ClientProcess {
 /// Clean up on exit.
 #[derive(Serialize, Deserialize)]
 pub struct Exit;
-impl ProcessMessage<Exit> for ClientProcess {
+impl MessageHandler<Exit> for ClientProcess {
     fn handle(state: &mut Self::State, _: Exit) {
         // Let the coordinator know that we left
         state
