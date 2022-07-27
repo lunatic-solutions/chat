@@ -17,13 +17,10 @@ use tui::{
     widgets::{Block, Borders, Tabs},
 };
 
-use lunatic::{
-    net::TcpStream,
-    process::{Message, ProcessRef},
-};
+use lunatic::{net::TcpStream, process::ProcessRef};
 use telnet_backend::TelnetBackend;
 
-use crate::{channel::ChannelProcess, client::ChannelMessage};
+use crate::channel::{ChannelProcess, ChannelProcessHandler};
 
 pub struct Ui {
     terminal: Terminal<TelnetBackend>,
@@ -327,7 +324,7 @@ impl Tab {
 
     pub fn message(&self, timestamp: String, user: String, message: String) {
         if let Some(notifier) = &self.notifier {
-            notifier.send(ChannelMessage(self.name.clone(), timestamp, user, message));
+            notifier.broadcast_message(self.name.clone(), timestamp, user, message);
         }
     }
 }

@@ -1,7 +1,7 @@
 use std::process::exit;
 
-use crate::channel;
-use crate::coordinator::{self, CoordinatorProcess};
+use crate::channel::ChannelProcessHandler;
+use crate::coordinator::{CoordinatorProcess, CoordinatorProcessHandler};
 use crate::telnet::Telnet;
 use crate::ui::telnet_backend::WindowSize;
 use crate::ui::{Tab, TabType, Ui, UiTabs};
@@ -11,8 +11,8 @@ use crate::{
 };
 use askama::Template;
 use chrono::{DateTime, Local};
-use lunatic::process::{AbstractProcess, Message, MessageHandler, ProcessRef, Request};
-use lunatic::Process;
+use lunatic::process::ProcessRef;
+use lunatic::{abstract_process, Process};
 use lunatic::{net::TcpStream, Mailbox};
 use serde::{Deserialize, Serialize};
 
@@ -54,17 +54,16 @@ pub struct ClientProcess {
     window_size: WindowSize,
 }
 
-impl AbstractProcess for ClientProcess {
-    type Arg = TcpStream;
-    type State = Self;
-
-    fn init(this: ProcessRef<Self>, stream: Self::Arg) -> Self::State {
+#[abstract_process]
+impl ClientProcess {
+    #[init]
+    fn init(this: ProcessRef<Self>, stream: TcpStream) -> Self::State {
         // Look up the coordinator or fail if it doesn't exist.
         let coordinator = ProcessRef::<CoordinatorProcess>::lookup("coordinator").unwrap();
         // Link coordinator to child. The coordinator sets `die_when_link_dies` to `0` and will not fail if child fails.
         coordinator.link();
         // Let the coordinator know that we joined.
-        let client_info = coordinator.request(coordinator::JoinServer(this.clone()));
+        let client_info = coordinator.join_server(this.clone());
 
         // This process is in charge of turning the raw tcp stream into higher level messages that are
         // sent back to the client. It's linked to the client and if one of them fails the other will too.
@@ -79,7 +78,7 @@ impl AbstractProcess for ClientProcess {
 
                 loop {
                     match telnet.next() {
-                        Ok(message) => client.send(TelnetCommand(message)),
+                        Ok(message) => client.process(message),
                         Err(err) => panic!("A telnet error ocurred: {:?}", err),
                     };
                 }
@@ -108,31 +107,28 @@ impl AbstractProcess for ClientProcess {
             window_size,
         }
     }
-}
 
-/// Handle data coming in over TCP from telnet.
-#[derive(Serialize, Deserialize)]
-pub struct TelnetCommand(pub TelnetMessage);
-impl MessageHandler<TelnetCommand> for ClientProcess {
-    fn handle(state: &mut Self::State, TelnetCommand(command): TelnetCommand) {
+    /// Handle data coming in over TCP from telnet.
+    #[handle_message]
+    fn process(&mut self, command: TelnetMessage) {
         match command {
             CtrlC | Error => {
-                state.this.send(Exit);
+                self.this.exit();
             }
             Tab => {
-                state.tabs.next();
-                state.ui.render();
+                self.tabs.next();
+                self.ui.render();
             }
             Backspace => {
-                state.tabs.input_del_char();
-                state.ui.render();
+                self.tabs.input_del_char();
+                self.ui.render();
             }
             Char(ch) => {
-                state.tabs.input_add_char(ch.into());
-                state.ui.render();
+                self.tabs.input_add_char(ch.into());
+                self.ui.render();
             }
             Enter => {
-                let input = state.tabs.clear();
+                let input = self.tabs.clear();
                 let input = input.trim();
                 if input.starts_with('/') {
                     // Command
@@ -145,39 +141,37 @@ impl MessageHandler<TelnetCommand> for ClientProcess {
                                 None,
                                 TabType::Info(instructions.render().unwrap()),
                             );
-                            state.tabs.add_or_switch(tab);
-                            state.ui.render();
+                            self.tabs.add_or_switch(tab);
+                            self.ui.render();
                         }
                         "/nick" => {
                             if let Some(nick) = split.next() {
-                                state.username = state.coordinator.request(
-                                    coordinator::ChangeName(state.this.clone(), nick.to_owned()),
-                                );
+                                self.username = self
+                                    .coordinator
+                                    .change_name(self.this.clone(), nick.to_owned());
                             };
-                            state.ui.render();
+                            self.ui.render();
                         }
                         "/list" => {
-                            let list = state.coordinator.request(coordinator::ListChannels);
+                            let list = self.coordinator.list_channels();
                             let list = ChannelList { list };
                             let tab = Tab::new(
                                 "Channels".to_string(),
                                 None,
                                 TabType::Info(list.render().unwrap()),
                             );
-                            state.tabs.add_or_switch(tab);
-                            state.ui.render();
+                            self.tabs.add_or_switch(tab);
+                            self.ui.render();
                         }
                         "/drop" => {
-                            let current_channel = state.tabs.get_selected().get_name();
+                            let current_channel = self.tabs.get_selected().get_name();
                             // If the tab is a channel notify coordinator that we are leaving.
                             if current_channel.starts_with('#') {
-                                state.coordinator.send(coordinator::LeaveChannel(
-                                    state.this.clone(),
-                                    current_channel,
-                                ));
+                                self.coordinator
+                                    .leave_channel(self.this.clone(), current_channel);
                             }
-                            state.tabs.drop();
-                            state.ui.render();
+                            self.tabs.drop();
+                            self.ui.render();
                         }
                         "/join" => {
                             let channel_name = if let Some(channel_name) = split.next() {
@@ -186,27 +180,26 @@ impl MessageHandler<TelnetCommand> for ClientProcess {
                                 return;
                             };
                             if channel_name.starts_with('#') {
-                                let channel = state.coordinator.request(coordinator::JoinChannel(
-                                    state.this.clone(),
-                                    channel_name.to_owned(),
-                                ));
+                                let channel = self
+                                    .coordinator
+                                    .join_channel(self.this.clone(), channel_name.to_owned());
 
                                 // Get last messages from channel
-                                let last_messages = channel.request(channel::LastMessages);
+                                let last_messages = channel.get_last_messages();
                                 // Create new tab bound to channel
                                 let tab = Tab::new(
                                     channel_name.to_owned(),
                                     Some(channel),
                                     TabType::Channel(last_messages),
                                 );
-                                state.tabs.add_or_switch(tab);
+                                self.tabs.add_or_switch(tab);
                             } else {
                                 // Incorrect channel name
                             }
-                            state.ui.render();
+                            self.ui.render();
                         }
                         "/exit" => {
-                            state.this.send(Exit);
+                            self.this.exit();
                         }
                         _ => {}
                     }
@@ -215,46 +208,41 @@ impl MessageHandler<TelnetCommand> for ClientProcess {
                     if !input.is_empty() && input.len() < 300 {
                         let now: DateTime<Local> = Local::now();
                         let timestamp = format!("[{}] ", now.format("%H:%M UTC"));
-                        state.tabs.get_selected().message(
+                        self.tabs.get_selected().message(
                             timestamp,
-                            state.username.clone(),
+                            self.username.clone(),
                             input.to_string(),
                         );
                     }
                 }
-                state.ui.render();
+                self.ui.render();
             }
             Naws(width, height) => {
-                state.window_size.set(width, height);
-                state.ui.render();
+                self.window_size.set(width, height);
+                self.ui.render();
             }
             _ => {}
         }
     }
-}
 
-/// Handle messages sent by a channel to us.
-#[derive(Serialize, Deserialize, Clone)]
-pub struct ChannelMessage(pub String, pub String, pub String, pub String);
-impl MessageHandler<ChannelMessage> for ClientProcess {
-    fn handle(
-        state: &mut Self::State,
-        ChannelMessage(channel, timestamp, name, message): ChannelMessage,
+    /// Handle messages sent by a channel to us.
+    #[handle_message]
+    fn receive_message(
+        &mut self,
+        channel: String,
+        timestamp: String,
+        name: String,
+        message: String,
     ) {
-        state.tabs.add_message(channel, timestamp, name, message);
-        state.ui.render();
+        self.tabs.add_message(channel, timestamp, name, message);
+        self.ui.render();
     }
-}
 
-/// Clean up on exit.
-#[derive(Serialize, Deserialize)]
-pub struct Exit;
-impl MessageHandler<Exit> for ClientProcess {
-    fn handle(state: &mut Self::State, _: Exit) {
+    /// Clean up on exit.
+    #[handle_message]
+    fn exit(&mut self) {
         // Let the coordinator know that we left
-        state
-            .coordinator
-            .send(coordinator::LeaveServer(state.this.clone()));
+        self.coordinator.leave_server(self.this.clone());
         // `exit(1)` is used to kill the linked telnet sub-process, because lunatic doesn't provide a
         // `kill process` API yet.
         exit(1);
