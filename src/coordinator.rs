@@ -47,7 +47,7 @@ pub struct CoordinatorProcess {
     channels: HashMap<String, (ProcessRef<ChannelProcess>, usize)>,
 }
 
-#[abstract_process]
+#[abstract_process(visibility = pub)]
 impl CoordinatorProcess {
     #[init]
     fn init(_: ProcessRef<Self>, _: ()) -> Self {

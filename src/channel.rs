@@ -12,7 +12,7 @@ pub struct ChannelProcess {
     last_messages: Vec<(String, String, String)>,
 }
 
-#[abstract_process]
+#[abstract_process(visibility = pub)]
 impl ChannelProcess {
     #[init]
     fn init(_: ProcessRef<Self>, _name: String) -> Self {

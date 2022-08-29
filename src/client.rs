@@ -54,7 +54,7 @@ pub struct ClientProcess {
     window_size: WindowSize,
 }
 
-#[abstract_process]
+#[abstract_process(visibility = pub)]
 impl ClientProcess {
     #[init]
     fn init(this: ProcessRef<Self>, stream: TcpStream) -> Self::State {
