@@ -193,7 +193,7 @@ impl UiTabs {
     }
 
     pub fn switch(&self, name: &str) {
-        if let Some(index) = self.names().iter().position(|n| &n == &&name) {
+        if let Some(index) = self.names().iter().position(|n| n == name) {
             let mut mutable = self.inner.as_ref().borrow_mut();
             mutable.selected = index;
         }

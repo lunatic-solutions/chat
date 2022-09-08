@@ -58,7 +58,7 @@ impl ChannelProcess {
         }
         // Broadcast message to all clients
         for (_id, client) in self.clients.iter() {
-            let _ = client.receive_message(
+            client.receive_message(
                 channel.clone(),
                 timestamp.clone(),
                 name.clone(),

@@ -35,11 +35,15 @@ macro_rules! derive_color {
         impl $name {
             #[inline]
             /// Returns the ANSI escape sequence as a string.
-            pub fn fg_str(&self) -> &'static str { csi!("38;5;", $value, "m") }
+            pub fn fg_str(&self) -> &'static str {
+                csi!("38;5;", $value, "m")
+            }
 
             #[inline]
             /// Returns the ANSI escape sequences as a string.
-            pub fn bg_str(&self) -> &'static str { csi!("48;5;", $value, "m") }
+            pub fn bg_str(&self) -> &'static str {
+                csi!("48;5;", $value, "m")
+            }
         }
     };
 }
@@ -106,7 +110,7 @@ impl Color for AnsiValue {
 }
 
 /// A truecolor RGB.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rgb(pub u8, pub u8, pub u8);
 
 impl Rgb {

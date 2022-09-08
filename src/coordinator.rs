@@ -12,7 +12,7 @@ use lunatic::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Debug)]
 pub struct Info {
     pub username: String,
     pub total_clients: usize,

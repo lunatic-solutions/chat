@@ -57,7 +57,7 @@ pub struct ClientProcess {
 #[abstract_process(visibility = pub)]
 impl ClientProcess {
     #[init]
-    fn init(this: ProcessRef<Self>, stream: TcpStream) -> Self::State {
+    fn init(this: ProcessRef<Self>, stream: TcpStream) -> Self {
         // Look up the coordinator or fail if it doesn't exist.
         let coordinator = ProcessRef::<CoordinatorProcess>::lookup("coordinator").unwrap();
         // Link coordinator to child. The coordinator sets `die_when_link_dies` to `0` and will not fail if child fails.
