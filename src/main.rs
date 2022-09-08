@@ -27,7 +27,7 @@ fn main(_: Mailbox<()>) {
     let listener = TcpListener::bind(address).unwrap();
 
     // Limit client's memory usage to 5 Mb & allow sub-processes.
-    let mut client_conf = ProcessConfig::new();
+    let mut client_conf = ProcessConfig::new().unwrap();
     client_conf.set_max_memory(5_000_000);
     client_conf.set_can_spawn_processes(true);
 
