@@ -43,7 +43,7 @@ If you have [rustup](https://rustup.rs/) installed:
 # Add the wasm32-wasi target
 > rustup target add wasm32-wasi
 # Build the project
-> cargo build
+> cargo build --target=wasm32-wasi
 ```
 
 To run it, you will need to have [lunatic](https://github.com/lunatic-solutions/lunatic) on your PATH.
