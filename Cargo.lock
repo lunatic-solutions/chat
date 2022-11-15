@@ -248,9 +248,9 @@ dependencies = [
 
 [[package]]
 name = "lunatic"
-version = "0.11.4"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "946d5710624fc8007c58d16c31da9a5db80169e180b20a3901a2af4dd71884a7"
+checksum = "b13c908f6597164be3c6f01706631967fd4677ee62f94c3374cac95784a39345"
 dependencies = [
  "bincode",
  "lunatic-macros",
@@ -262,9 +262,9 @@ dependencies = [
 
 [[package]]
 name = "lunatic-macros"
-version = "0.11.4"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32f9b31b098de4c99a9f85d30735367d05d5ce0f84cb796f6a5792b4bb8b3a09"
+checksum = "52122f17e685be82d3d938558b4f827ac0a1140adc39183af7a390298d79fd03"
 dependencies = [
  "convert_case",
  "proc-macro2 1.0.43",
@@ -274,9 +274,9 @@ dependencies = [
 
 [[package]]
 name = "lunatic-test"
-version = "0.10.1"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1ed5beab4ac9e9b0ba97b7139de06ca173bb21718141152c0133b46d4100665"
+checksum = "2baee76cce00a0c693983edd92fafc4bede7c4756e1e2a9346c03b77a22fbc1a"
 dependencies = [
  "quote 1.0.21",
  "syn 1.0.99",
