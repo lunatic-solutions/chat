@@ -10,13 +10,6 @@ changed since the blog was written and updated to the [new higher-level process 
     <img src="https://raw.githubusercontent.com/lunatic-solutions/chat/main/assets/ss.png" alt="Terminal look example">
 </div>
 
-If you just would like to try it out, join the hosted version with:
-
-```bash
-telnet eu.lunatic.chat
-```
-
-
 ### Architecture
 
 The server is written in Rust. The Rust code is then compiled to WebAssembly and runs on top of
