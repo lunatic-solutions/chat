@@ -1,14 +1,16 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    channel::{ChannelProcess, ChannelProcessHandler},
+    channel::{ChannelProcess, ChannelProcessMessages},
     client::ClientProcess,
 };
 
 use lunatic::{
-    abstract_process, host,
-    process::{ProcessRef, StartProcess},
+    abstract_process,
+    ap::{Config, ProcessRef},
+    host,
     supervisor::Supervisor,
+    AbstractProcess,
 };
 use serde::{Deserialize, Serialize};
 
@@ -29,11 +31,11 @@ struct Client {
 pub struct CoordinatorSup;
 impl Supervisor for CoordinatorSup {
     type Arg = String;
-    type Children = CoordinatorProcess;
+    type Children = (CoordinatorProcess,);
 
     fn init(config: &mut lunatic::supervisor::SupervisorConfig<Self>, name: Self::Arg) {
         // Always register the `CoordinatorProcess` under the name passed to the supervisor.
-        config.children_args(((), Some(name)))
+        config.children_args((((), Some(name)),))
     }
 }
 
@@ -50,15 +52,15 @@ pub struct CoordinatorProcess {
 #[abstract_process(visibility = pub)]
 impl CoordinatorProcess {
     #[init]
-    fn init(_: ProcessRef<Self>, _: ()) -> Self {
+    fn init(_: Config<Self>, _: ()) -> Result<Self, ()> {
         // Coordinator shouldn't die when a client dies. This makes the link one-directional.
         unsafe { host::api::process::die_when_link_dies(0) };
 
-        CoordinatorProcess {
+        Ok(CoordinatorProcess {
             next_id: 0,
             clients: HashMap::new(),
             channels: HashMap::new(),
-        }
+        })
     }
 
     /// Connect to the server.
@@ -94,7 +96,7 @@ impl CoordinatorProcess {
             .unwrap()
             .channels
             .iter()
-            .for_each(|channel| channel.leave(client.clone()));
+            .for_each(|channel| channel.leave(client));
         self.clients.remove(&client.id());
     }
 
@@ -133,12 +135,11 @@ impl CoordinatorProcess {
             // Channel already exists
             exists.1 += 1;
             exists.0.join(client);
-            exists.0.clone()
+            exists.0
         } else {
             // Start a new channel process
-            let channel_proc = ChannelProcess::start_link(channel.clone(), None);
-            self.channels
-                .insert(channel.clone(), (channel_proc.clone(), 1));
+            let channel_proc = ChannelProcess::link().start(channel.clone()).unwrap();
+            self.channels.insert(channel.clone(), (channel_proc, 1));
             channel_proc.join(client);
             channel_proc
         }

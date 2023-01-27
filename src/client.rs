@@ -1,7 +1,9 @@
 use std::process::exit;
 
-use crate::channel::ChannelProcessHandler;
-use crate::coordinator::{CoordinatorProcess, CoordinatorProcessHandler};
+use crate::channel::ChannelProcessRequests;
+use crate::coordinator::{
+    CoordinatorProcess, CoordinatorProcessMessages, CoordinatorProcessRequests,
+};
 use crate::telnet::Telnet;
 use crate::ui::telnet_backend::WindowSize;
 use crate::ui::{Tab, TabType, Ui, UiTabs};
@@ -11,7 +13,7 @@ use crate::{
 };
 use askama::Template;
 use chrono::{DateTime, Local};
-use lunatic::process::ProcessRef;
+use lunatic::ap::{Config, ProcessRef};
 use lunatic::{abstract_process, Process};
 use lunatic::{net::TcpStream, Mailbox};
 use serde::{Deserialize, Serialize};
@@ -57,18 +59,18 @@ pub struct ClientProcess {
 #[abstract_process(visibility = pub)]
 impl ClientProcess {
     #[init]
-    fn init(this: ProcessRef<Self>, stream: TcpStream) -> Self {
+    fn init(config: Config<Self>, stream: TcpStream) -> Result<Self, ()> {
         // Look up the coordinator or fail if it doesn't exist.
         let coordinator = ProcessRef::<CoordinatorProcess>::lookup("coordinator").unwrap();
         // Link coordinator to child. The coordinator sets `die_when_link_dies` to `0` and will not fail if child fails.
         coordinator.link();
         // Let the coordinator know that we joined.
-        let client_info = coordinator.join_server(this.clone());
+        let client_info = coordinator.join_server(config.self_ref());
 
         // This process is in charge of turning the raw tcp stream into higher level messages that are
         // sent back to the client. It's linked to the client and if one of them fails the other will too.
         Process::spawn_link(
-            (this.clone(), stream.clone()),
+            (config.self_ref(), stream.clone()),
             |(client, stream), _: Mailbox<()>| {
                 let mut telnet = Telnet::new(stream);
                 telnet.iac_do_linemode().unwrap();
@@ -98,14 +100,14 @@ impl ClientProcess {
         let tabs = UiTabs::new(tab);
         let ui = Ui::new(stream, window_size.clone(), tabs.clone());
 
-        ClientProcess {
-            this,
+        Ok(ClientProcess {
+            this: config.self_ref(),
             coordinator,
             username: client_info.username,
             tabs,
             ui,
             window_size,
-        }
+        })
     }
 
     /// Handle data coming in over TCP from telnet.
@@ -146,9 +148,8 @@ impl ClientProcess {
                         }
                         "/nick" => {
                             if let Some(nick) = split.next() {
-                                self.username = self
-                                    .coordinator
-                                    .change_name(self.this.clone(), nick.to_owned());
+                                self.username =
+                                    self.coordinator.change_name(self.this, nick.to_owned());
                             };
                             self.ui.render();
                         }
@@ -167,8 +168,7 @@ impl ClientProcess {
                             let current_channel = self.tabs.get_selected().get_name();
                             // If the tab is a channel notify coordinator that we are leaving.
                             if current_channel.starts_with('#') {
-                                self.coordinator
-                                    .leave_channel(self.this.clone(), current_channel);
+                                self.coordinator.leave_channel(self.this, current_channel);
                             }
                             self.tabs.drop();
                             self.ui.render();
@@ -182,7 +182,7 @@ impl ClientProcess {
                             if channel_name.starts_with('#') {
                                 let channel = self
                                     .coordinator
-                                    .join_channel(self.this.clone(), channel_name.to_owned());
+                                    .join_channel(self.this, channel_name.to_owned());
 
                                 // Get last messages from channel
                                 let last_messages = channel.get_last_messages();
@@ -242,7 +242,7 @@ impl ClientProcess {
     #[handle_message]
     fn exit(&mut self) {
         // Let the coordinator know that we left
-        self.coordinator.leave_server(self.this.clone());
+        self.coordinator.leave_server(self.this);
         // `exit(1)` is used to kill the linked telnet sub-process, because lunatic doesn't provide a
         // `kill process` API yet.
         exit(1);

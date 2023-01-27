@@ -5,7 +5,7 @@ mod telnet;
 mod ui;
 
 use clap::{Arg, Command};
-use lunatic::{net::TcpListener, process::StartProcess, Mailbox, ProcessConfig};
+use lunatic::{net::TcpListener, AbstractProcess, Mailbox, ProcessConfig};
 
 use crate::{client::ClientProcess, coordinator::CoordinatorSup};
 
@@ -19,7 +19,9 @@ fn main(_: Mailbox<()>) {
         .get_matches();
 
     // Create a coordinator supervisor and register the coordinator under the "coordinator" name.
-    CoordinatorSup::start_link("coordinator".to_owned(), None);
+    CoordinatorSup::link()
+        .start("coordinator".to_owned())
+        .unwrap();
 
     let port = matches.value_of("PORT").unwrap_or("2323");
     println!("Started server on port {}", port);
@@ -32,6 +34,8 @@ fn main(_: Mailbox<()>) {
     client_conf.set_can_spawn_processes(true);
 
     while let Ok((stream, _)) = listener.accept() {
-        ClientProcess::start_config(stream, None, &client_conf);
+        ClientProcess::configure(&client_conf)
+            .start(stream)
+            .unwrap();
     }
 }

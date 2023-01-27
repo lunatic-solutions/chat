@@ -17,10 +17,10 @@ use tui::{
     widgets::{Block, Borders, Tabs},
 };
 
-use lunatic::{net::TcpStream, process::ProcessRef};
+use lunatic::{ap::ProcessRef, net::TcpStream};
 use telnet_backend::TelnetBackend;
 
-use crate::channel::{ChannelProcess, ChannelProcessHandler};
+use crate::channel::{ChannelProcess, ChannelProcessMessages};
 
 pub struct Ui {
     terminal: Terminal<TelnetBackend>,

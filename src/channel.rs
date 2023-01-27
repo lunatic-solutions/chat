@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 
-use lunatic::{abstract_process, process::ProcessRef};
+use lunatic::{
+    abstract_process,
+    ap::{Config, ProcessRef},
+};
 
-use crate::client::{ClientProcess, ClientProcessHandler};
+use crate::client::{ClientProcess, ClientProcessMessages};
 
 /// A channel dispatches messages to all clients that are part of it.
 ///
@@ -15,11 +18,11 @@ pub struct ChannelProcess {
 #[abstract_process(visibility = pub)]
 impl ChannelProcess {
     #[init]
-    fn init(_: ProcessRef<Self>, _name: String) -> Self {
-        ChannelProcess {
+    fn init(_: Config<Self>, _name: String) -> Result<Self, ()> {
+        Ok(ChannelProcess {
             clients: HashMap::new(),
             last_messages: Vec::new(),
-        }
+        })
     }
 
     /// join the channel.
