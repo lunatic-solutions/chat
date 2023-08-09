@@ -35,7 +35,8 @@ impl Supervisor for CoordinatorSup {
 
     fn init(config: &mut lunatic::supervisor::SupervisorConfig<Self>, name: Self::Arg) {
         // Always register the `CoordinatorProcess` under the name passed to the supervisor.
-        config.children_args((((), Some(name)),))
+        config.set_args(((),));
+        config.set_names((Some(name),));
     }
 }
 

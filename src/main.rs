@@ -23,7 +23,7 @@ fn main(_: Mailbox<()>) {
         .start("coordinator".to_owned())
         .unwrap();
 
-    let port = matches.value_of("PORT").unwrap_or("2323");
+    let port: u16 = *matches.get_one("PORT").unwrap_or(&2323);
     println!("Started server on port {}", port);
     let address = format!("0.0.0.0:{}", port);
     let listener = TcpListener::bind(address).unwrap();
